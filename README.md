@@ -47,6 +47,9 @@
   - [`10_mc33879_voffset/`](./examples/10_mc33879_voffset/) — **Узел 10: Узел защиты от «перевертышей» и смещения VOffset**:
     - Управление 8-канальным драйвером `D1 MC33879APEKR2` по шине `SPI2` (`CS2` на `GPIO8`, `EN-DE` на `GPIO20`);
     - Использование прямых входов управления `IN5 (GPIO27)` и `IN6 (GPIO21)`.
+  - [`11_units_matrix_tle94112/`](./examples/11_units_matrix_tle94112/) — **Узел 11: Коммутатор единиц E0–E9 и фильтр возврата -LINE**:
+    - Управление 12-полумостовым SPI-драйвером `D2 TLE94112EL` (`E0..E9`, `XP3:1..10`, `TP35..TP44`);
+    - Использование нелинейной таблицы маппинга единиц в BSP (`levisw_bsp_unit_to_tle_hb`).
 
 ## Быстрый старт
 
@@ -62,7 +65,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/10_mc33879_voffset
+cd examples/11_units_matrix_tle94112
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
