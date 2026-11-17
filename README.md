@@ -37,6 +37,10 @@
     - Управление 16-битным расширителем `DD3 TCA9535PWR` (`0x20`) по шине `I2C-L`;
     - Коммутация силовых шин, мультиплексора `ADG1608` и реле через порты `P0`/`P1`;
     - Мониторинг линий `PG`, `ALARMIN` и прерывания `INT0` (`GPIO35`).
+  - [`08_vamp_version_debug/`](./examples/08_vamp_version_debug/) — **Узел 08: Датчики VAMPOK, VersionPCB и интерфейсы отладки**:
+    - Измерение напряжения питания усилителя `VAmpM` через делитель на `GPIO34 / ADC1_CH6`;
+    - Определение аппаратной версии PCB (`VersionPCB`) на `GPIO14 / ADC2_CH6`;
+    - Работа с отладочными интерфейсами `UART0 (XP5)` и `JTAG (XP4)`.
 
 ## Быстрый старт
 
@@ -52,7 +56,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/07_i2c_expander_matrix
+cd examples/08_vamp_version_debug
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
