@@ -13,13 +13,17 @@
   - `src/levisw_mb_v1_2_bsp.c` — драйвер безопасной инициализации, питания, телеметрии и обмена по SPI/I2C;
   - [`bsp/levisw-mb-v1.2/README.md`](./bsp/levisw-mb-v1.2/README.md) — подробная схемотехническая документация и контрольные точки.
 
-- [`examples/`](./examples/) — Примеры применения для аппаратных узлов платы:
+- [`examples/`](./examples/) — Готовые примеры применения для аппаратных узлов платы:
   - [`01_terminals_and_indication/`](./examples/01_terminals_and_indication/) — **Узел 01: Входные/выходные клеммы и локальная индикация**:
     - Управление адресным светодиодом `LED1 (WS2812C, GPIO23, TP20)`;
     - Обработка кнопки сервисного режима `SW1 MODE (GPIO27, TP21)`;
     - Мониторинг клеммника `XP1:6/7` (линии трубок `LU1/LU2`);
     - Импульс отпирания двери на `XP1:9 (Open/1W)` через `R1 (0 Ом)` к выходу `PO2/SW-OUT2`;
     - Тестовый перебор клеммников десятков `XP2:1..8 (D0..D7)` и единиц `XP3:1..10 (E0..E9)`.
+  - [`03_rs485_transceiver/`](./examples/03_rs485_transceiver/) — **Узел 03: Дифференциальный трансивер шины RS-485**:
+    - Настройка UART1 (`GPIO2` TXD, `GPIO4` RXD) для работы с `DD2 (MAX13487EESA+)`;
+    - Управление режимом Shutdown трансивера через `GPIO27 (RS-ON)` (`levisw_bsp_rs485_set_active`);
+    - Организация циклического обмена пакетами по дифференциальной линии с защитой `FR1/FR2` и `FS1`.
 
 ## Быстрый старт
 
@@ -35,7 +39,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/01_terminals_and_indication
+cd examples/03_rs485_transceiver
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
