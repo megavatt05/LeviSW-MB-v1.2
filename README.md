@@ -44,6 +44,9 @@
   - [`09_dozens_matrix_adg1608/`](./examples/09_dozens_matrix_adg1608/) — **Узел 09: Коммутатор десятков и диодная защита линий D0–D7**:
     - Управление аналоговым мультиплексором десятков `DA1 ADG1608BR` (`D0..D7`, `XP2:1..8`, `TP27..TP34`);
     - Контроль коммутации строк матрицы десятков с диодной защитой линий.
+  - [`10_mc33879_voffset/`](./examples/10_mc33879_voffset/) — **Узел 10: Узел защиты от «перевертышей» и смещения VOffset**:
+    - Управление 8-канальным драйвером `D1 MC33879APEKR2` по шине `SPI2` (`CS2` на `GPIO8`, `EN-DE` на `GPIO20`);
+    - Использование прямых входов управления `IN5 (GPIO27)` и `IN6 (GPIO21)`.
 
 ## Быстрый старт
 
@@ -59,7 +62,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/09_dozens_matrix_adg1608
+cd examples/10_mc33879_voffset
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
