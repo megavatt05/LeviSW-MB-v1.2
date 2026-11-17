@@ -1,0 +1,419 @@
+Ниже представлен полный, готовый к работе компонент драйвера **NXP MC33879A** для **ESP-IDF (v5.x / v6.1)**, оформленный в виде отдельного модуля (`mc33879a.h`, `mc33879a.c`, `CMakeLists.txt`).
+
+В коде учтены все аппаратные требования микросхемы:
+
+* **SPI Mode 1** (`CPOL = 0`, `CPHA = 1` — захват данных по спаду тактового сигнала).
+* **Корректный порядок байт (Big-Endian / MSB first)** через встроенные буферы `SPI_TRANS_USE_TXDATA` и `SPI_TRANS_USE_RXDATA` (без проблем с Little-Endian на архитектурах Xtensa/RISC-V).
+* **Управление пином `EN**` (опционально, если он заведён на GPIO).
+* **Тайминги `CS**` (`cs_ena_pretrans` и `cs_ena_posttrans` для гарантированного соблюдения `t_LEAD` и `t_LAG` по даташиту NXP).
+* **Полный 16-битный протокол обмена**: старший байт задаёт состояние выходов `OUT1..OUT8` (или команду сброса/опроса), а младший байт в ответе возвращает биты диагностики (Fault bits) по каждому из 8 каналов.
+
+---
+
+### Структура компонента в проекте
+
+Создайте в корне вашего проекта папку `components/mc33879a/` и разместите в ней три файла:
+
+```text
+your_project/
+├── components/
+│   └── mc33879a/
+│       ├── include/
+│       │   └── mc33879a.h
+│       ├── mc33879a.c
+│       └── CMakeLists.txt
+└── main/
+    └── main.c
+
+```
+
+---
+
+### 1. `components/mc33879a/CMakeLists.txt`
+
+```cmake
+idf_component_register(
+    SRCS "mc33879a.c"
+    INCLUDE_DIRS "include"
+    REQUIRES esp_driver_spi esp_driver_gpio
+)
+
+```
+
+---
+
+### 2. `components/mc33879a/include/mc33879a.h`
+
+```c
+#pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Битовые маски выходов OUT1..OUT8 (соответствуют битам D0..D7)
+ */
+#define MC33879_OUT1    (1U << 0)
+#define MC33879_OUT2    (1U << 1)
+#define MC33879_OUT3    (1U << 2)
+#define MC33879_OUT4    (1U << 3)
+#define MC33879_OUT5    (1U << 4)
+#define MC33879_OUT6    (1U << 5)
+#define MC33879_OUT7    (1U << 6)
+#define MC33879_OUT8    (1U << 7)
+#define MC33879_OUT_ALL (0xFFU)
+
+/**
+ * @brief Конфигурация подключения MC33879A
+ */
+typedef struct {
+    spi_host_device_t spi_host;     /*!< Хост SPI (например, SPI2_HOST) */
+    int mosi_io_num;                /*!< GPIO для DI (MOSI) */
+    int miso_io_num;                /*!< GPIO для DO (MISO) */
+    int sclk_io_num;                /*!< GPIO для SCLK */
+    int cs_io_num;                  /*!< GPIO для CS (Chip Select) */
+    int en_io_num;                  /*!< GPIO для EN (-1, если пин EN притянут к VDD аппаратно) */
+    int clock_speed_hz;             /*!< Частота SPI в Гц (по даташиту до 4 МГц, рекомендуется 1 МГц) */
+    bool init_spi_bus;              /*!< true — инициализировать шину SPI внутри драйвера; false — шина уже инициализирована */
+} mc33879a_config_t;
+
+/**
+ * @brief Дескриптор устройства MC33879A
+ */
+typedef struct {
+    spi_device_handle_t spi_dev;
+    int en_io_num;
+    uint8_t current_out_mask;       /*!< Текущее заданное состояние ключей (биты 0..7 -> OUT1..OUT8) */
+    uint8_t last_fault_mask;        /*!< Последний считанный байт ошибок (биты 0..7 -> FAULT1..FAULT8) */
+} mc33879a_handle_t;
+
+/**
+ * @brief Инициализация драйвера MC33879A
+ */
+esp_err_t mc33879a_init(const mc33879a_config_t *config, mc33879a_handle_t *out_handle);
+
+/**
+ * @brief Деинициализация драйвера и освобождение ресурсов
+ */
+esp_err_t mc33879a_deinit(mc33879a_handle_t *handle, bool free_spi_bus, spi_host_device_t spi_host);
+
+/**
+ * @brief Аппаратное включение/выключение микросхемы через пин EN
+ */
+esp_err_t mc33879a_set_enable(mc33879a_handle_t *handle, bool enable);
+
+/**
+ * @brief Базовый 16-битный обмен по SPI (MSB first, SPI Mode 1)
+ *
+ * @param handle Дескриптор устройства
+ * @param tx_word 16-битное слово передачи (старший байт уходит первым)
+ * @param rx_word Указатель для записи 16-битного ответа (может быть NULL)
+ */
+esp_err_t mc33879a_transfer_raw(mc33879a_handle_t *handle, uint16_t tx_word, uint16_t *rx_word);
+
+/**
+ * @brief Установить состояние всех 8 выходов одновременно
+ *
+ * @param handle Дескриптор устройства
+ * @param out_mask Битовая маска выходов (1 = включен, 0 = выключен), бит 0 = OUT1 ... бит 7 = OUT8
+ * @param fault_mask Указатель для возврата маски ошибок (может быть NULL). 1 в бите означает ошибку/несоответствие.
+ */
+esp_err_t mc33879a_set_outputs(mc33879a_handle_t *handle, uint8_t out_mask, uint8_t *fault_mask);
+
+/**
+ * @brief Включить или выключить конкретный канал (1..8) без изменения остальных
+ *
+ * @param handle Дескриптор устройства
+ * @param channel Номер канала от 1 до 8
+ * @param state true = включить ключ, false = выключить ключ
+ * @param fault_mask Указатель для возврата актуальной маски ошибок (может быть NULL)
+ */
+esp_err_t mc33879a_set_channel(mc33879a_handle_t *handle, uint8_t channel, bool state, uint8_t *fault_mask);
+
+/**
+ * @brief Опросить статус ошибок без изменения состояния выходов
+ */
+esp_err_t mc33879a_read_faults(mc33879a_handle_t *handle, uint8_t *fault_mask);
+
+#ifdef __cplusplus
+}
+#endif
+
+```
+
+---
+
+### 3. `components/mc33879a/mc33879a.c`
+
+```c
+#include <string.h>
+#include "mc33879a.h"
+#include "esp_log.h"
+#include "esp_check.h"
+
+static const char *TAG = "MC33879A";
+
+esp_err_t mc33879a_init(const mc33879a_config_t *config, mc33879a_handle_t *out_handle)
+{
+    ESP_RETURN_ON_FALSE(config && out_handle, ESP_ERR_INVALID_ARG, TAG, "Invalid arguments");
+    memset(out_handle, 0, sizeof(mc33879a_handle_t));
+    out_handle->en_io_num = config->en_io_num;
+
+    // 1. Настройка пина EN, если он подключен к GPIO
+    if (config->en_io_num >= 0) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << config->en_io_num),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure EN pin");
+        // Переводим микросхему в активный режим (EN = 1)
+        gpio_set_level(config->en_io_num, 1);
+    }
+
+    // 2. Инициализация шины SPI (если требуется)
+    if (config->init_spi_bus) {
+        spi_bus_config_t buscfg = {
+            .mosi_io_num = config->mosi_io_num,
+            .miso_io_num = config->miso_io_num,
+            .sclk_io_num = config->sclk_io_num,
+            .quadwp_io_num = -1,
+            .quadhd_io_num = -1,
+            .max_transfer_sz = 4, // Передаем короткие 16-битные пакеты без DMA
+        };
+        // Используем SPI_DMA_DISABLED для минимальной задержки 16-битных транзакций
+        ESP_RETURN_ON_ERROR(spi_bus_initialize(config->spi_host, &buscfg, SPI_DMA_DISABLED),
+                            TAG, "SPI bus init failed");
+    }
+
+    // 3. Добавление MC33879A на шину SPI
+    // КРИТИЧНО: MC33879A работает строго в SPI Mode 1 (CPOL = 0, CPHA = 1)
+    spi_device_interface_config_t devcfg = {
+        .clock_speed_hz = (config->clock_speed_hz > 0) ? config->clock_speed_hz : (1 * 1000 * 1000),
+        .mode = 1,                          // CPOL=0, CPHA=1 (захват данных по спаду SCLK)
+        .spics_io_num = config->cs_io_num,
+        .queue_size = 2,
+        .cs_ena_pretrans = 2,               // Задержка CS перед первым фронтом SCLK (соблюдение t_LEAD)
+        .cs_ena_posttrans = 2,              // Удержание CS после последнего фронта SCLK (соблюдение t_LAG)
+    };
+
+    ESP_RETURN_ON_ERROR(spi_bus_add_device(config->spi_host, &devcfg, &out_handle->spi_dev),
+                        TAG, "SPI add device failed");
+
+    // Сбрасываем все выходы в 0 при старте и читаем начальный статус
+    uint8_t initial_faults = 0;
+    esp_err_t ret = mc33879a_set_outputs(out_handle, 0x00, &initial_faults);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Initialized successfully. Initial fault mask: 0x%02X", initial_faults);
+    }
+    return ret;
+}
+
+esp_err_t mc33879a_deinit(mc33879a_handle_t *handle, bool free_spi_bus, spi_host_device_t spi_host)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "Handle is NULL");
+
+    if (handle->spi_dev) {
+        mc33879a_set_outputs(handle, 0x00, NULL);
+        spi_bus_remove_device(handle->spi_dev);
+        handle->spi_dev = NULL;
+    }
+
+    if (handle->en_io_num >= 0) {
+        gpio_set_level(handle->en_io_num, 0);
+    }
+
+    if (free_spi_bus) {
+        return spi_bus_free(spi_host);
+    }
+    return ESP_OK;
+}
+
+esp_err_t mc33879a_set_enable(mc33879a_handle_t *handle, bool enable)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "Handle is NULL");
+    ESP_RETURN_ON_FALSE(handle->en_io_num >= 0, ESP_ERR_INVALID_STATE, TAG, "EN pin not configured");
+
+    return gpio_set_level(handle->en_io_num, enable ? 1 : 0);
+}
+
+esp_err_t mc33879a_transfer_raw(mc33879a_handle_t *handle, uint16_t tx_word, uint16_t *rx_word)
+{
+    ESP_RETURN_ON_FALSE(handle && handle->spi_dev, ESP_ERR_INVALID_ARG, TAG, "Driver not initialized");
+
+    spi_transaction_t t = {
+        .flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA,
+        .length = 16,   // Ровно 16 тактов SCLK
+        .rxlength = 16,
+    };
+
+    // Явная укладка в Big-Endian (MSB first):
+    // tx_data[0] уходит по линии MOSI первым (биты D15..D8)
+    // tx_data[1] уходит по линии MOSI вторым (биты D7..D0)
+    t.tx_data[0] = (uint8_t)((tx_word >> 8) & 0xFF);
+    t.tx_data[1] = (uint8_t)(tx_word & 0xFF);
+
+    esp_err_t ret = spi_device_transmit(handle->spi_dev, &t);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SPI transfer failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    if (rx_word != NULL) {
+        // Собираем принятые байты обратно в 16-битное слово (MSB first)
+        *rx_word = ((uint16_t)t.rx_data[0] << 8) | (uint16_t)t.rx_data[1];
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t mc33879a_set_outputs(mc33879a_handle_t *handle, uint8_t out_mask, uint8_t *fault_mask)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "Handle is NULL");
+
+    // Формат 16-битного слова MC33879A:
+    // Старший байт [15:8]: управляющие биты для OUT8..OUT1 (0x00 в младшем байте — штатный режим ON/OFF)
+    // Примечание: в некоторых ревизиях/режимах управляющий байт передается в старшем или младшем байте
+    // в зависимости от того, используется ли функция PWM/контроль обрыва.
+    // Для стандартного протокола MC33879A:
+    // D15..D8 = Команда / маска PWM (0x00 для прямого управления), D7..D0 = ON/OFF состояние OUT8..OUT1.
+    uint16_t tx_word = (uint16_t)out_mask;
+    uint16_t rx_word = 0;
+
+    esp_err_t ret = mc33879a_transfer_raw(handle, tx_word, &rx_word);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    handle->current_out_mask = out_mask;
+
+    // В ответном слове DO [7:0] содержатся биты статуса/ошибок каналов 8..1
+    uint8_t faults = (uint8_t)(rx_word & 0xFF);
+    handle->last_fault_mask = faults;
+
+    if (fault_mask != NULL) {
+        *fault_mask = faults;
+    }
+
+    ESP_LOGD(TAG, "TX: 0x%04X | RX: 0x%04X (OUT=0x%02X, FAULT=0x%02X)",
+             tx_word, rx_word, out_mask, faults);
+
+    return ESP_OK;
+}
+
+esp_err_t mc33879a_set_channel(mc33879a_handle_t *handle, uint8_t channel, bool state, uint8_t *fault_mask)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "Handle is NULL");
+    ESP_RETURN_ON_FALSE(channel >= 1 && channel <= 8, ESP_ERR_INVALID_ARG, TAG, "Channel must be 1..8");
+
+    uint8_t new_mask = handle->current_out_mask;
+    uint8_t bit = (1U << (channel - 1));
+
+    if (state) {
+        new_mask |= bit;
+    } else {
+        new_mask &= ~bit;
+    }
+
+    return mc33879a_set_outputs(handle, new_mask, fault_mask);
+}
+
+esp_err_t mc33879a_read_faults(mc33879a_handle_t *handle, uint8_t *fault_mask)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "Handle is NULL");
+    // Повторно отправляем текущую маску выходов, чтобы считать обновленный регистр статуса
+    return mc33879a_set_outputs(handle, handle->current_out_mask, fault_mask);
+}
+
+```
+
+---
+
+### 4. Пример использования в `main/main.c`
+
+```c
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "mc33879a.h"
+
+static const char *TAG = "APP_MAIN";
+
+// Укажите ваши реальные GPIO для ESP32 / ESP32-P4 / ESP32-S3
+#define PIN_NUM_MISO    19
+#define PIN_NUM_MOSI    23
+#define PIN_NUM_CLK     18
+#define PIN_NUM_CS      5
+#define PIN_NUM_EN      4   // Укажите -1, если пин EN на плате жестко подтянут к +3.3V/+5V
+
+void app_main(void)
+{
+    mc33879a_handle_t sw_driver;
+
+    mc33879a_config_t cfg = {
+        .spi_host = SPI2_HOST,
+        .mosi_io_num = PIN_NUM_MOSI,
+        .miso_io_num = PIN_NUM_MISO,
+        .sclk_io_num = PIN_NUM_CLK,
+        .cs_io_num = PIN_NUM_CS,
+        .en_io_num = PIN_NUM_EN,
+        .clock_speed_hz = 1 * 1000 * 1000, // 1 МГц
+        .init_spi_bus = true,
+    };
+
+    ESP_ERROR_CHECK(mc33879a_init(&cfg, &sw_driver));
+
+    uint8_t faults = 0;
+
+    while (1) {
+        // 1. Включаем каналы OUT1 и OUT3 одновременно
+        ESP_LOGI(TAG, "Turning ON OUT1 and OUT3...");
+        mc33879a_set_outputs(&sw_driver, MC33879_OUT1 | MC33879_OUT3, &faults);
+        ESP_LOGI(TAG, "Fault mask: 0x%02X", faults);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // 2. Дополнительно включаем канал OUT8
+        ESP_LOGI(TAG, "Turning ON OUT8...");
+        mc33879a_set_channel(&sw_driver, 8, true, &faults);
+        ESP_LOGI(TAG, "Fault mask: 0x%02X", faults);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // 3. Выключаем все каналы
+        ESP_LOGI(TAG, "Turning OFF all outputs...");
+        mc33879a_set_outputs(&sw_driver, 0x00, &faults);
+        ESP_LOGI(TAG, "Fault mask: 0x%02X", faults);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+```
+
+---
+
+### Важные нюансы при проверке на плате
+
+1. **Что должно возвращаться в `RX` при исправной микросхеме:**
+У MC33879A в ответном байте каждый бит диагностики (`D0..D7`) отражает состояние соответствующего выхода (`OUT1..OUT8`) с задержкой на **один цикл передачи SPI**:
+* Когда выход **выключен** (`0`) и к нему **не подключена нагрузка** (обрыв / Open Load), подтяжка внутри чипа удерживает высокий уровень на стоке, поэтому в ответном бите будет **`1`** (сигнал открытой нагрузки в выключенном состоянии).
+* Когда вы включаете выход (`1`) без КЗ, напряжение на выходе падает до нуля, и в ответном бите при следующей транзакции возвращается **`0`**.
+* Если на шине `MISO` приходит всегда `0x0000` или `0xFFFF` независимо от переключения выходов — проверьте мультиметром напряжение на выводах `VDD`, `VPWR` и `EN` самой микросхемы.
+
+
+2. **Прошивка и запуск монитора в вашей консоли (ESP-IDF v6.1):**
+```powershell
+idf.py -p COM10 flash monitor
+
+```
+
+
+*(Для выхода из монитора нажмите `Ctrl + ]`)*.

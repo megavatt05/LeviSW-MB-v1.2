@@ -1,0 +1,6 @@
+{
+  "name": "LeviSW-MB v1.2 Engineering Explorer",
+  "description": "Interactive technical documentation, schematic viewer, and netlist explorer for LeviSW-MB v1.2 intercom switcher motherboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

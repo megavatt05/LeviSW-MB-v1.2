@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/levisw_mb_v1_2_bsp.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_adc
+        esp_timer
+)
