@@ -27,6 +27,9 @@
   - [`04_lu_detector/`](./examples/04_lu_detector/) — **Узел 04: Детекция статуса трубок LU1 / LU2**:
     - Опрос дискретных линий детекции трубок `LU1 (GPIO36, TP7)` и `LU2 (GPIO37, TP6)` через триггер Шмитта `DD1 (74LVC2G17GW)` и BSP;
     - Программная фильтрация дребезга контактов и визуализация статуса на `LED1 (WS2812C)`.
+  - [`05_onewire_opendoor/`](./examples/05_onewire_opendoor/) — **Узел 05: Каскад 1-Wire и управления открытием двери**:
+    - Работа с интерфейсом `1-Wire` (`1WRx=GPIO12/MTDI`, `1WTx=GPIO15/MTDO`) через сборку `RN12`;
+    - Аппаратное отпирание замка на клемме `XP1:9 (Open/1W)` через перемычку `R1 (0 Ом)` и полумост `PO2` (`SW-OUT2`) драйвера `D2 TLE94112EL`.
 
 ## Быстрый старт
 
@@ -42,7 +45,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/04_lu_detector
+cd examples/05_onewire_opendoor
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
