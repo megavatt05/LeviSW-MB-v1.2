@@ -24,6 +24,9 @@
     - Настройка UART1 (`GPIO2` TXD, `GPIO4` RXD) для работы с `DD2 (MAX13487EESA+)`;
     - Управление режимом Shutdown трансивера через `GPIO27 (RS-ON)` (`levisw_bsp_rs485_set_active`);
     - Организация циклического обмена пакетами по дифференциальной линии с защитой `FR1/FR2` и `FS1`.
+  - [`04_lu_detector/`](./examples/04_lu_detector/) — **Узел 04: Детекция статуса трубок LU1 / LU2**:
+    - Опрос дискретных линий детекции трубок `LU1 (GPIO36, TP7)` и `LU2 (GPIO37, TP6)` через триггер Шмитта `DD1 (74LVC2G17GW)` и BSP;
+    - Программная фильтрация дребезга контактов и визуализация статуса на `LED1 (WS2812C)`.
 
 ## Быстрый старт
 
@@ -39,7 +42,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/03_rs485_transceiver
+cd examples/04_lu_detector
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
