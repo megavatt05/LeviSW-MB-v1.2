@@ -30,6 +30,9 @@
   - [`05_onewire_opendoor/`](./examples/05_onewire_opendoor/) — **Узел 05: Каскад 1-Wire и управления открытием двери**:
     - Работа с интерфейсом `1-Wire` (`1WRx=GPIO12/MTDI`, `1WTx=GPIO15/MTDO`) через сборку `RN12`;
     - Аппаратное отпирание замка на клемме `XP1:9 (Open/1W)` через перемычку `R1 (0 Ом)` и полумост `PO2` (`SW-OUT2`) драйвера `D2 TLE94112EL`.
+  - [`06_mcu_esp32_rf/`](./examples/06_mcu_esp32_rf/) — **Узел 06: Центральный микроконтроллер ESP32 и RF-тракт**:
+    - Инициализация и системная диагностика MCU `DD4 (ESP32-PICO-V3)`;
+    - Проверка беспроводного RF-тракта и инициализация Wi-Fi в режиме STA.
 
 ## Быстрый старт
 
@@ -45,7 +48,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/05_onewire_opendoor
+cd examples/06_mcu_esp32_rf
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
