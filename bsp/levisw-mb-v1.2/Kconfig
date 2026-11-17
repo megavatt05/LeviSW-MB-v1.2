@@ -1,0 +1,45 @@
+menu "LeviSW-MB v1.2 BSP Configuration"
+
+    config LEVISW_I2C_FREQ_HZ
+        int "I2C-L bus frequency (Hz)"
+        default 400000
+        range 100000 1000000
+        help
+            Тактовая частота шины I2C-L (IO32=SCL0, IO33=SDA0) для TCA9535, MCP4532 и INA226.
+
+    config LEVISW_SPI_TLE94112_FREQ_HZ
+        int "TLE94112EL (D2) SPI frequency (Hz)"
+        default 2000000
+        range 100000 5000000
+        help
+            Тактовая частота SPI для драйвера единиц TLE94112EL (до 5 МГц по даташиту).
+
+    config LEVISW_SPI_MC33879_FREQ_HZ
+        int "MC33879APEKR2 (D1) SPI frequency (Hz)"
+        default 2000000
+        range 100000 4000000
+        help
+            Тактовая частота SPI для драйвера VOffset MC33879APEKR2.
+
+    config LEVISW_DEFAULT_V1_WIPER
+        int "Default MCP4532 DA2 wiper (+V1)"
+        default 2
+        range 0 128
+        help
+            Начальная уставка потенциометра DA2 (0x2C) для шины +V1 (wiper=2 соответствует ~7.8 В).
+
+    config LEVISW_DEFAULT_V2_WIPER
+        int "Default MCP4532 DA3 wiper (+V2)"
+        default 10
+        range 0 128
+        help
+            Начальная уставка потенциометра DA3 (0x2D) для шины +V2 (wiper=10 соответствует ~5.5-6.7 В).
+
+    config LEVISW_DEFAULT_ULOAD_WIPER
+        int "Default MCP4532 DA4 wiper (Uload / eLOAD)"
+        default 64
+        range 0 128
+        help
+            Начальная уставка потенциометра DA4 (0x2F) для канала eLOAD (MV1e).
+
+endmenu
