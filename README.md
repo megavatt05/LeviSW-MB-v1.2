@@ -50,6 +50,9 @@
   - [`11_units_matrix_tle94112/`](./examples/11_units_matrix_tle94112/) — **Узел 11: Коммутатор единиц E0–E9 и фильтр возврата -LINE**:
     - Управление 12-полумостовым SPI-драйвером `D2 TLE94112EL` (`E0..E9`, `XP3:1..10`, `TP35..TP44`);
     - Использование нелинейной таблицы маппинга единиц в BSP (`levisw_bsp_unit_to_tle_hb`).
+  - [`12_power_vamp_switch/`](./examples/12_power_vamp_switch/) — **Узел 12: Входная защита питания и ключ усилителя +Vamp**:
+    - Коммутация питания аудиоусилителя `+Vamp` через ключевые транзисторы `VT4/VT5` по сигналу `VAMPON` от `DD3 TCA9535` (`P0.4`, `TP63`);
+    - Мониторинг фактического напряжения `+Vamp` через измерительную цепь `VAmpM` (`GPIO34 / ADC1_CH6`, `TP81`).
 
 ## Быстрый старт
 
@@ -65,7 +68,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/11_units_matrix_tle94112
+cd examples/12_power_vamp_switch
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
