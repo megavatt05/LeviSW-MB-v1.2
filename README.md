@@ -33,6 +33,10 @@
   - [`06_mcu_esp32_rf/`](./examples/06_mcu_esp32_rf/) — **Узел 06: Центральный микроконтроллер ESP32 и RF-тракт**:
     - Инициализация и системная диагностика MCU `DD4 (ESP32-PICO-V3)`;
     - Проверка беспроводного RF-тракта и инициализация Wi-Fi в режиме STA.
+  - [`07_i2c_expander_matrix/`](./examples/07_i2c_expander_matrix/) — **Узел 07: I2C-расширитель портов и матрица перемычек UART/1W**:
+    - Управление 16-битным расширителем `DD3 TCA9535PWR` (`0x20`) по шине `I2C-L`;
+    - Коммутация силовых шин, мультиплексора `ADG1608` и реле через порты `P0`/`P1`;
+    - Мониторинг линий `PG`, `ALARMIN` и прерывания `INT0` (`GPIO35`).
 
 ## Быстрый старт
 
@@ -48,7 +52,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/06_mcu_esp32_rf
+cd examples/07_i2c_expander_matrix
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
