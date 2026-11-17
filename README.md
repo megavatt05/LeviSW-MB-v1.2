@@ -41,6 +41,9 @@
     - Измерение напряжения питания усилителя `VAmpM` через делитель на `GPIO34 / ADC1_CH6`;
     - Определение аппаратной версии PCB (`VersionPCB`) на `GPIO14 / ADC2_CH6`;
     - Работа с отладочными интерфейсами `UART0 (XP5)` и `JTAG (XP4)`.
+  - [`09_dozens_matrix_adg1608/`](./examples/09_dozens_matrix_adg1608/) — **Узел 09: Коммутатор десятков и диодная защита линий D0–D7**:
+    - Управление аналоговым мультиплексором десятков `DA1 ADG1608BR` (`D0..D7`, `XP2:1..8`, `TP27..TP34`);
+    - Контроль коммутации строк матрицы десятков с диодной защитой линий.
 
 ## Быстрый старт
 
@@ -56,7 +59,7 @@ project(levisw_firmware)
 
 ### 2. Запуск примеров
 ```bash
-cd examples/08_vamp_version_debug
+cd examples/09_dozens_matrix_adg1608
 idf.py set-target esp32
 idf.py build
 idf.py flash monitor
