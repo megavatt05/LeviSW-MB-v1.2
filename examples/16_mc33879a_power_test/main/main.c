@@ -81,21 +81,30 @@ static void format_byte_bin(uint8_t val, char out[9])
 static esp_err_t board_power_enable_and_check(void)
 {
     ESP_LOGI(TAG, "Включение силовых шин питания +V1 и +V2 (питание VPWR для D1 MC33879A)...");
+    
+    /* Устанавливаем уставки потенциометров для максимального допустимого напряжения:
+     * DA2 (0x2C) -> wiper = 2 (~7.8 В)
+     * DA3 (0x2D) -> wiper = 1 (~10.5-11.0 В) для питания 12В светодиодов */
+    (void)levisw_bsp_pot_set_wiper(LEVISW_BUS_V1, 2);
+    (void)levisw_bsp_pot_set_wiper(LEVISW_BUS_V2, 1);
+
     ESP_ERROR_CHECK(levisw_bsp_power_set(true, true, false, false));
 
     /* Задержка на плавный пуск D3 TPS65261 и заряд выходных конденсаторов */
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     bool pg = false;
     ESP_ERROR_CHECK(levisw_bsp_power_good(&pg));
 
     float v1_v = 0.0f, v1_ma = 0.0f;
     float v2_v = 0.0f, v2_ma = 0.0f;
+    uint32_t vamp_mv = 0;
     (void)levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
     (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+    (void)levisw_bsp_vamp_read_mv(&vamp_mv);
 
-    ESP_LOGI(TAG, "Статус питания: PG=%d | +V1=%.2f В (%.1f мА) | +V2(VPWR)=%.2f В (%.1f мА)",
-             pg ? 1 : 0, v1_v, v1_ma, v2_v, v2_ma);
+    ESP_LOGI(TAG, "Статус питания: PG=%d | +Vdc(POWERIN)=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
+             pg ? 1 : 0, (float)vamp_mv / 1000.0f, v1_v, v2_v, v2_ma);
 
     if (!pg) {
         ESP_LOGW(TAG, "ВНИМАНИЕ: сигнал Power Good (PG) = 0! Проверьте входное питание POWERIN.");
@@ -137,68 +146,68 @@ static void mc33879_test_task(void *pvParameters)
     char flt_bin[9];
     uint32_t cycle = 0;
 
-    ESP_LOGI(TAG, "Старт цикла тестирования D1 MC33879A (SPI2 Mode 1, CS2=IO8, EN-DE=IO20)");
+    ESP_LOGI(TAG, "===============================================================");
+    ESP_LOGI(TAG, "ЗАПУСК РЕЖИМА БЕГУЩЕГО ОГНЯ (OUT1..OUT8 / D0..D7, XP2:1..XP2:8)");
+    ESP_LOGI(TAG, "С повышенным напряжением шины +V2 и непрерывным контролем тока");
+    ESP_LOGI(TAG, "===============================================================");
 
     while (1) {
-        ESP_LOGI(TAG, "================ Цикл тестирования #%lu ================", (unsigned long)cycle);
+        ESP_LOGI(TAG, "================ Цикл бегущего огня #%lu ================", (unsigned long)cycle);
 
-        /* 1. Включаем каналы OUT1 и OUT3 одновременно */
-        uint8_t mask = MC33879_OUT1 | MC33879_OUT3;
-        ESP_ERROR_CHECK(mc33879a_set_outputs(&s_mc33879, mask, &faults));
-        /* У MC33879A диагностика обновляется со сдвигом на 1 кадр: делаем повторный опрос */
-        vTaskDelay(pdMS_TO_TICKS(5));
-        ESP_ERROR_CHECK(mc33879a_read_faults(&s_mc33879, &faults));
-        format_byte_bin(mask, out_bin);
-        format_byte_bin(faults, flt_bin);
-        ESP_LOGI(TAG, "[OUT1 + OUT3 ON] OUT=0x%02X (%s) | FAULT/RX=0x%02X (%s)",
-                 mask, out_bin, faults, flt_bin);
-        app_led_set_rgb(0, 45, 0);
-        vTaskDelay(pdMS_TO_TICKS(1500));
-
-        /* 2. Дополнительно включаем канал OUT8 */
-        ESP_ERROR_CHECK(mc33879a_set_channel(&s_mc33879, 8, true, &faults));
-        vTaskDelay(pdMS_TO_TICKS(5));
-        ESP_ERROR_CHECK(mc33879a_read_faults(&s_mc33879, &faults));
-        format_byte_bin(s_mc33879.current_out_mask, out_bin);
-        format_byte_bin(faults, flt_bin);
-        ESP_LOGI(TAG, "[+OUT8 ON]       OUT=0x%02X (%s) | FAULT/RX=0x%02X (%s)",
-                 s_mc33879.current_out_mask, out_bin, faults, flt_bin);
-        vTaskDelay(pdMS_TO_TICKS(1500));
-
-        /* 3. Поочерёдный тест каждого выхода OUT1..OUT8 (бегущий бит) */
-        ESP_LOGI(TAG, "Запуск поочерёдного переключения каналов OUT1..OUT8...");
+        /* Поочерёдный перебор каждого канала OUT1..OUT8 (D0..D7) */
         for (uint8_t ch = 1; ch <= 8; ch++) {
             uint8_t single_mask = (uint8_t)(1U << (ch - 1));
+            uint8_t dozen_idx = ch - 1; /* Индекс десятка 0..7 для ADG1608 S1..S8 */
+
+            /* 1. Коммутируем соответствующий канал мультиплексора ADG1608 */
+            (void)levisw_bsp_adg1608_select(dozen_idx, true);
+
+            /* 2. Включаем соответствующий силовой ключ MC33879A */
             ESP_ERROR_CHECK(mc33879a_set_outputs(&s_mc33879, single_mask, &faults));
-            vTaskDelay(pdMS_TO_TICKS(5));
-            ESP_ERROR_CHECK(mc33879a_read_faults(&s_mc33879, &faults));
+
+            /* Задержка на нарастание тока и опрос INA226 DD6 */
+            vTaskDelay(pdMS_TO_TICKS(40));
+            (void)mc33879a_read_faults(&s_mc33879, &faults);
+
+            float ch_v = 0.0f, ch_ma = 0.0f;
+            (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &ch_v, NULL, &ch_ma, NULL);
 
             format_byte_bin(single_mask, out_bin);
             format_byte_bin(faults, flt_bin);
-            ESP_LOGI(TAG, "  Канал OUT%u: OUT=0x%02X (%s) -> RX=0x%02X (%s)",
-                     ch, single_mask, out_bin, faults, flt_bin);
-            vTaskDelay(pdMS_TO_TICKS(400));
+
+            const char *status_str = "НЕТ НАГРУЗКИ";
+            if (ch_ma > 150.0f) {
+                status_str = "ВНИМАНИЕ: ПЕРЕГРУЗКА/КЗ!";
+            } else if (ch_ma > 8.0f) {
+                status_str = "ЛАМПА ГОРИТ (ЯРКО)";
+            } else if (ch_ma > 3.0f) {
+                status_str = "ЛАМПА АКТИВНА";
+            }
+
+            ESP_LOGI(TAG, "  Клемма XP2:%u (D%u / S%u): OUT=0x%02X (%s) | I=%.1f мА | V=%.2f В | RX=0x%02X -> [%s]",
+                     ch, dozen_idx, ch, single_mask, out_bin, ch_ma, ch_v, faults, status_str);
+
+            /* Время свечения светодиода для приятного визуального эффекта бегущего огня */
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
 
-        /* 4. Выключаем все выходы и проверяем питание */
+        /* Краткая пауза со всеми выключенными каналами между кругами бегущего огня */
+        (void)levisw_bsp_adg1608_select(0, false);
         ESP_ERROR_CHECK(mc33879a_set_outputs(&s_mc33879, 0x00, &faults));
-        vTaskDelay(pdMS_TO_TICKS(5));
-        ESP_ERROR_CHECK(mc33879a_read_faults(&s_mc33879, &faults));
-        format_byte_bin(faults, flt_bin);
-        ESP_LOGI(TAG, "[ALL OFF]        OUT=0x00 (00000000) | FAULT/RX=0x%02X (%s)",
-                 faults, flt_bin);
+        vTaskDelay(pdMS_TO_TICKS(20));
 
         bool pg = false;
-        float v1_v = 0.0f, v1_ma = 0.0f, v2_v = 0.0f, v2_ma = 0.0f;
+        float v1_v = 0.0f, v1_ma = 0.0f;
+        float v2_v = 0.0f, v2_ma = 0.0f;
         (void)levisw_bsp_power_good(&pg);
         (void)levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
         (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
-        ESP_LOGI(TAG, "[Телеметрия]     PG=%d | +V1=%.2f В (%.1f мА) | +V2=%.2f В (%.1f мА)",
-                 pg ? 1 : 0, v1_v, v1_ma, v2_v, v2_ma);
 
-        app_led_set_rgb(pg ? 0 : 60, 0, pg ? 40 : 0); /* Синий при норме, красный при отсутствии PG */
+        ESP_LOGI(TAG, "[Пауза круга]    PG=%d | +V1=%.2f В | +V2(холостой)=%.2f В (%.1f мА)",
+                 pg ? 1 : 0, v1_v, v2_v, v2_ma);
+
         cycle++;
-        vTaskDelay(pdMS_TO_TICKS(1500));
+        vTaskDelay(pdMS_TO_TICKS(600));
     }
 }
 
@@ -208,11 +217,12 @@ void app_main(void)
     ESP_LOGI(TAG, "LeviSW-MB v1.2 — Проект тестирования питания и D1 MC33879A");
     ESP_LOGI(TAG, "===============================================================");
 
-    /* 1. Инициализация светодиода и аппаратного BSP */
-    ESP_ERROR_CHECK(app_led_init());
-    app_led_set_rgb(40, 25, 0); /* Жёлтый: инициализация */
+    /* Диагностический шаг: проверяем запуск без RMT LED */
+    ESP_LOGI(TAG, "Шаг 1: Пропуск RMT LED инициализации для теста");
 
+    ESP_LOGI(TAG, "Шаг 2: Инициализация аппаратного BSP...");
     ESP_ERROR_CHECK(levisw_bsp_init());
+    ESP_LOGI(TAG, "Шаг 2: BSP успешно инициализирован!");
 
     /* 2. Включаем питание (+V1, +V2/VPWR) и контролируем PG и INA226 */
     ESP_ERROR_CHECK(board_power_enable_and_check());

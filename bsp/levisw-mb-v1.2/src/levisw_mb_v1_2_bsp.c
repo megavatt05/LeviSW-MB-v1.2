@@ -82,11 +82,7 @@ static const char *TAG = "levisw_bsp";
 #define CONFIG_LEVISW_DEFAULT_ULOAD_WIPER   64
 #endif
 
-#ifdef ADC_ATTEN_DB_12
 #define LEVISW_ADC_ATTEN ADC_ATTEN_DB_12
-#else
-#define LEVISW_ADC_ATTEN ADC_ATTEN_DB_11
-#endif
 
 typedef struct {
     bool                 initialized;
@@ -337,7 +333,7 @@ esp_err_t levisw_bsp_init(void)
         return ESP_OK;
     }
 
-    esp_err_t err = ESP_OK;
+    esp_err_t ret = ESP_OK;
 
     s_bsp.exp_mutex = xSemaphoreCreateMutex();
     if (s_bsp.exp_mutex == NULL) {
@@ -371,7 +367,7 @@ esp_err_t levisw_bsp_init(void)
 cleanup:
     s_bsp.initialized = false;
     levisw_bsp_deinit();
-    return err;
+    return ret;
 }
 
 esp_err_t levisw_bsp_deinit(void)

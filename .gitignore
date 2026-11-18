@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# ESP-IDF & IDE artifacts
+**/build/
+**/sdkconfig
+**/sdkconfig.old
+**/managed_components/
+**/.clangd/
+**/.clangd
+**/.vscode/
+**/.vscode
+**/dependencies.lock

@@ -1,0 +1,16 @@
+idf_component_register(
+    SRCS
+        "main.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        levisw-mb-v1.2
+        tle94112
+        mc33879a
+        driver
+        esp_adc
+        esp_timer
+        freertos
+        log
+        led_strip
+)
