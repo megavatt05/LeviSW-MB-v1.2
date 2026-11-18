@@ -55,7 +55,7 @@ typedef struct {
     const char *name;       /* Текстовое имя линии */
 } unit_chaser_mapping_t;
 
-static const unit_chaser_mapping_t s_units_map[LEVISW_MATRIX_UNITS_COUNT] = {
+static const unit_chaser_mapping_t s_units_map[LEVISW_MATRIX_UNITS_COUNT] __attribute__((unused)) = {
     { 0, 1,  35, TLE_HB1,  1,  "E0" },
     { 1, 2,  36, TLE_HB5,  5,  "E1" },
     { 2, 3,  37, TLE_HB7,  7,  "E2" },
@@ -126,60 +126,29 @@ static esp_err_t app_check_power(void)
 static void tle94112_chaser_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "===============================================================");
-    ESP_LOGI(TAG, "РЕЖИМ БЕГУЩЕГО ОГНЯ: ЦИКЛИЧЕСКОЕ ПЕРЕКЛЮЧЕНИЕ E0 -> E9");
-    ESP_LOGI(TAG, "Схема подключения: ОБЩИЙ АНОД (+12В к светодиодам).");
-    ESP_LOGI(TAG, "Управление: LOW-SIDE (активный канал замыкается на GND).");
-    ESP_LOGI(TAG, "В каждый момент времени ярко горит строго ОДИН светодиод!");
+    ESP_LOGI(TAG, "СТАТИЧЕСКИЙ РЕЖИМ: PO3 (pin 14, XP3:7, TP41, линия E6) = LOW-SIDE (GND)");
+    ESP_LOGI(TAG, "АНОД: D0 (MC33879A OUT1, XP2:1) = +V2 (~7.8 В / 8.75 В)");
+    ESP_LOGI(TAG, "Светодиод между XP2:1 и XP3:7 ГОРИТ НЕПРЕРЫВНО И ЯРКО!");
     ESP_LOGI(TAG, "===============================================================");
 
     /* Гарантированное отключение всех полумостов перед стартом */
     tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
 
-    uint32_t cycle = 0;
+    /* Включаем полумост PO3 (HB3, клемма XP3:7 / TP41) статически в Low-Side (GND) */
+    esp_err_t err = tle94112_set_hb_state(s_tle_handle, TLE_HB3, TLE_HB_LS_ON);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Ошибка включения PO3 (HB3): %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, ">>> [СТАТИЧЕСКИ ВКЛЮЧЕН] Полумост PO3 (XP3:7 / TP41) = LS_ON (GND) <<<");
+    }
 
     while (1) {
-        cycle++;
-        ESP_LOGI(TAG, "----------- Цикл бегущего огня #%lu -----------", (unsigned long)cycle);
-
-        /* ПРЯМОЙ ХОД: E0 -> E1 -> ... -> E9 */
-        for (size_t i = 0; i < LEVISW_MATRIX_UNITS_COUNT; i++) {
-            const unit_chaser_mapping_t *unit = &s_units_map[i];
-
-            /* Включаем текущий полумост в Low-Side (замыкание на GND) */
-            esp_err_t err = tle94112_set_hb_state(s_tle_handle, unit->hb_idx, TLE_HB_LS_ON);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Ошибка включения %s (PO%u): %s", unit->name, unit->po_num, esp_err_to_name(err));
-            } else {
-                ESP_LOGI(TAG, "[ШАГ %u/10] Линия %s (XP3:%u, %s) -> Полумост PO%u = LS_ON (GND, ГОРИТ)",
-                         (unsigned int)(i + 1), unit->name, unit->terminal_pin,
-                         unit->test_point ? "TP35..44" : "", unit->po_num);
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(CHASER_STEP_DELAY_MS));
-
-            /* Выключаем текущий полумост в Z-состояние (FLOATING) */
-            tle94112_set_hb_state(s_tle_handle, unit->hb_idx, TLE_HB_FLOATING);
-
-            /* Пауза Break-Before-Make для чистого визуального разделения */
-            vTaskDelay(pdMS_TO_TICKS(CHASER_BLANK_DELAY_MS));
-        }
-
-        /* ОБРАТНЫЙ ХОД: E8 -> E7 -> ... -> E1 (чтобы огонь красиво бегал туда-обратно) */
-        for (int i = (int)LEVISW_MATRIX_UNITS_COUNT - 2; i > 0; i--) {
-            const unit_chaser_mapping_t *unit = &s_units_map[i];
-
-            tle94112_set_hb_state(s_tle_handle, unit->hb_idx, TLE_HB_LS_ON);
-            vTaskDelay(pdMS_TO_TICKS(CHASER_STEP_DELAY_MS));
-            tle94112_set_hb_state(s_tle_handle, unit->hb_idx, TLE_HB_FLOATING);
-            vTaskDelay(pdMS_TO_TICKS(CHASER_BLANK_DELAY_MS));
-        }
-
-        /* Периодический контроль телеметрии раз в цикл */
+        /* Дежурный цикл: просто удерживаем состояние и контролируем ток */
+        vTaskDelay(pdMS_TO_TICKS(3000));
         float v2_v = 0.0f, v2_ma = 0.0f;
         (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
-        ESP_LOGI(TAG, "[Телеметрия цикла #%lu] +V2=%.2f В, ток шины V2 = %.1f мА",
-                 (unsigned long)cycle, v2_v, v2_ma);
+        ESP_LOGI(TAG, "PO3 (XP3:7) [GND] + D0 (XP2:1) [+V2=%.2f В, I=%.1f мА] -> Светодиод ГОРИТ НЕПРЕРЫВНО", v2_v, v2_ma);
     }
 }
 
