@@ -887,8 +887,18 @@ esp_err_t levisw_bsp_lu_event_receive(levisw_bsp_lu_event_t *event, uint32_t tim
     ESP_RETURN_ON_FALSE(s_bsp.lu_event_queue != NULL, ESP_ERR_INVALID_STATE, TAG,
                         "Очередь событий LU не создана");
 
-    const TickType_t timeout_ticks = (timeout_ms == UINT32_MAX)
-                                   ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    TickType_t timeout_ticks;
+    if (timeout_ms == UINT32_MAX) {
+        timeout_ticks = portMAX_DELAY;
+    } else if (timeout_ms == 0U) {
+        timeout_ticks = 0;
+    } else {
+        timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+        if (timeout_ticks == 0) {
+            timeout_ticks = 1;
+        }
+    }
+
     return (xQueueReceive(s_bsp.lu_event_queue, event, timeout_ticks) == pdTRUE)
          ? ESP_OK : ESP_ERR_TIMEOUT;
 }
