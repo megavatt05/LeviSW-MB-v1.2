@@ -96,7 +96,8 @@ class MatrixAddressMapGeneratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "map.csv"
             rows = sample_rows()
-            rows[0]["verification_date"] = "2026-02-30"
+            for row in rows:
+                row["verification_date"] = "2026-02-30"
             self.write_csv(source, rows)
             with self.assertRaisesRegex(ValueError, "valid calendar date"):
                 generator.load_and_validate(source)
@@ -105,7 +106,8 @@ class MatrixAddressMapGeneratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "map.csv"
             rows = sample_rows()
-            rows[0]["verification_date"] = "20261123"
+            for row in rows:
+                row["verification_date"] = "20261123"
             self.write_csv(source, rows)
             with self.assertRaisesRegex(ValueError, "ISO format"):
                 generator.load_and_validate(source)
