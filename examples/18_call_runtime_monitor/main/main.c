@@ -123,9 +123,20 @@ static void runtime_task(void *arg)
 
     for (;;) {
         levisw_bsp_lu_event_t event;
-        const esp_err_t err = lu_event_dispatcher_decoder_receive(s_dispatcher,
-                                                                    &event, 10U);
-        if (err == ESP_OK) {
+        esp_err_t err = lu_event_dispatcher_decoder_receive(s_dispatcher,
+                                                               &event, 10U);
+        if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
+            ESP_LOGE(TAG, "Decoder queue error: %s", esp_err_to_name(err));
+        }
+
+        /*
+         * Drain the currently queued raw edges before polling the decoder's
+         * burst timeout. Dispatcher priority is higher than this task, so any
+         * pending BSP events are forwarded before this consumer runs again.
+         * This prevents a scheduler delay from closing a frame while older
+         * timestamped edges are still waiting in the subscriber queue.
+         */
+        while (err == ESP_OK) {
             const lu_decoder_edge_t edge = {
                 .line = (event.line == LEVISW_LU_LINE_1)
                       ? LU_DECODER_LINE_1 : LU_DECODER_LINE_2,
@@ -137,8 +148,8 @@ static void runtime_task(void *arg)
             if (feed_status != CALL_RUNTIME_OK) {
                 ESP_LOGW(TAG, "LU feed status=%d", (int)feed_status);
             }
-        } else if (err != ESP_ERR_TIMEOUT) {
-            ESP_LOGE(TAG, "Decoder queue error: %s", esp_err_to_name(err));
+
+            err = lu_event_dispatcher_decoder_receive(s_dispatcher, &event, 0U);
         }
 
         lu_event_dispatcher_stats_t dispatch_stats;
@@ -219,14 +230,14 @@ void app_main(void)
     lu_event_dispatcher_default_config(&dispatcher_config);
     ESP_ERROR_CHECK(lu_event_dispatcher_start(&dispatcher_config, &s_dispatcher));
 
-    if (xTaskCreate(runtime_task, "call_runtime", 6144, NULL, 6, NULL) != pdPASS) {
+    if (xTaskCreate(runtime_task, "call_runtime", 6144, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Could not create runtime task");
         (void)lu_event_dispatcher_stop(s_dispatcher, 250U);
         s_dispatcher = NULL;
         (void)levisw_bsp_deinit();
         return;
     }
-    if (xTaskCreate(monitor_task, "lu_monitor", 3072, NULL, 4, NULL) != pdPASS) {
+    if (xTaskCreate(monitor_task, "lu_monitor", 3072, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Could not create LU monitor task");
         /* Runtime continues to own its dedicated decoder queue; monitor drops are diagnostic only. */
     }
