@@ -1,0 +1,45 @@
+name: ESP-IDF 6.0 build — Call Runtime monitor
+
+on:
+  push:
+    branches:
+      - fix/safety-driver-audit
+    paths:
+      - "examples/18_call_runtime_monitor/**"
+      - "bsp/levisw-mb-v1.2/**"
+      - "components/call_runtime/**"
+      - "components/call_controller/**"
+      - "components/handset_detector/**"
+      - "components/lu_decoder/**"
+      - "components/lu_event_dispatcher/**"
+      - "components/matrix_manager/**"
+      - ".github/workflows/call-runtime-idf-build.yml"
+  pull_request:
+    paths:
+      - "examples/18_call_runtime_monitor/**"
+      - "bsp/levisw-mb-v1.2/**"
+      - "components/call_runtime/**"
+      - "components/call_controller/**"
+      - "components/handset_detector/**"
+      - "components/lu_decoder/**"
+      - "components/lu_event_dispatcher/**"
+      - "components/matrix_manager/**"
+      - ".github/workflows/call-runtime-idf-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build example 18 for ESP32 with ESP-IDF 6.0
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build Call Runtime monitor
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: release-v6.0
+          target: esp32
+          path: examples/18_call_runtime_monitor
