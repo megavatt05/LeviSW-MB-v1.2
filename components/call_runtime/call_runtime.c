@@ -108,7 +108,7 @@ static call_runtime_status_t process_decoder_results(call_runtime_t *runtime,
                                   (result.line == LU_DECODER_LINE_1)
                                       ? HANDSET_LINE_1 : HANDSET_LINE_2,
                                   runtime->latest_levels[(size_t)result.line],
-                                  (int64_t)(completed_us / 1000))) {
+                                  completed_us)) {
             (void)send_controller_event(runtime, CALL_EVENT_HARDWARE_FAULT,
                                         0U, false, now_us);
             clear_active_call_context(runtime, now_us);
@@ -236,7 +236,7 @@ call_runtime_status_t call_runtime_feed_lu_edge(call_runtime_t *runtime,
             &runtime->handset,
             (edge->line == LU_DECODER_LINE_1) ? HANDSET_LINE_1 : HANDSET_LINE_2,
             edge->level,
-            edge->timestamp_us / 1000);
+            edge->timestamp_us);
         return process_handset_event(runtime, event, edge->timestamp_us);
     }
 
@@ -268,7 +268,7 @@ call_runtime_status_t call_runtime_tick(call_runtime_t *runtime, int64_t now_us)
          (after_decode == CALL_STATE_ANSWER_VERIFY) ||
          (after_decode == CALL_STATE_TALKING))) {
         const handset_event_t event = handset_detector_poll(
-            &runtime->handset, now_us / 1000);
+            &runtime->handset, now_us);
         status = process_handset_event(runtime, event, now_us);
         if (status != CALL_RUNTIME_OK) {
             return status;
