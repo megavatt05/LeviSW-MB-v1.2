@@ -2,11 +2,11 @@
 
 This single-owner runtime connects the pure components:
 
-`LU edge stream → LU Decoder → Call Controller → Matrix Manager`
+\`LU edge stream → LU Decoder → Call Controller → Matrix Manager\`
 
 and, after a route is connected:
 
-`LU edge stream on the active line → Handset Detector → Call Controller`
+\`LU edge stream on the active line → Handset Detector → Call Controller\`
 
 ## Processing rules
 
@@ -41,18 +41,23 @@ connecting subscriber lines.
 DD6 is the +V2 rail monitor and is not a subscriber-loop current sensor. No
 handset threshold is inferred from INA226.
 
-## Address-map gate
+## Address-map safety gate
 
-The runtime inherits the sequential 1..80 software map from Matrix Manager.
-The unresolved discrepancy between "flat 47 = D4×E6" (sequential map) and
-the LED bench report's "flat 47 = D0×E6" remains a hard integration gate.
-Do not enable real crosspoint outputs until the physical apartment wiring map
-has been reconciled.
+Runtime does not invent or calculate apartment coordinates. Matrix Manager
+requires a versioned, validated and explicitly verified 80-entry physical
+address map before a route can be connected. The conventional sequential map
+is available only as an unverified candidate for test fixtures and simulation.
+A missing/unverified map is rejected without touching matrix hardware.
+
+The physical map must be measured against the actual harness and reviewed.
+The schematic D/E test-point table documents signal access, not apartment
+numbering. The previously noted conflict between flat 47 = D4×E6 (sequential
+software convention) and the LED bench label flat 47 = D0×E6 remains open.
 
 ## Native tests
 
-```sh
+\`\`\`sh
 cmake -S components/call_runtime/tests -B build/call_runtime_tests
 cmake --build build/call_runtime_tests
 ctest --test-dir build/call_runtime_tests --output-on-failure
-```
+\`\`\`
