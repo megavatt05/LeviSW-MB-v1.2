@@ -25,10 +25,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "led_strip.h"
 
@@ -92,6 +94,92 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
 /* --------------------------------------------------------------------------
  * 2. Контроль питания и телеметрии шины +V2 (VPWR для TLE94112EL)
  * ------------------------------------------------------------------------ */
+
+/* --------------------------------------------------------------------------
+ * Монитор событий LU1/LU2. В ISR только захватывается фронт; здесь выполняется
+ * debounce 5 мс и печатается подтверждённое изменение уровня.
+ * ------------------------------------------------------------------------ */
+
+#define LU_DEBOUNCE_US 5000
+
+typedef struct {
+    bool stable_level;
+    bool candidate_level;
+    bool pending;
+    int64_t candidate_since_us;
+} lu_monitor_state_t;
+
+static void app_lu_event_monitor_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    lu_monitor_state_t lines[2] = {
+        { .stable_level = levisw_bsp_lu1_read() },
+        { .stable_level = levisw_bsp_lu2_read() },
+    };
+    lines[0].candidate_level = lines[0].stable_level;
+    lines[1].candidate_level = lines[1].stable_level;
+
+    ESP_LOGI(TAG, "LU monitor: начальные уровни LU1=%d, LU2=%d",
+             lines[0].stable_level, lines[1].stable_level);
+
+    uint32_t last_dropped = levisw_bsp_lu_event_dropped_count();
+
+    for (;;) {
+        uint32_t timeout_ms = 1000U;
+        const int64_t now_us = esp_timer_get_time();
+
+        for (size_t i = 0; i < 2; i++) {
+            if (lines[i].pending) {
+                const int64_t elapsed_us = now_us - lines[i].candidate_since_us;
+                const int64_t remaining_us = (int64_t)LU_DEBOUNCE_US - elapsed_us;
+                const uint32_t remaining_ms = (remaining_us <= 0)
+                                            ? 0U : (uint32_t)((remaining_us + 999) / 1000);
+                if (remaining_ms < timeout_ms) {
+                    timeout_ms = remaining_ms;
+                }
+            }
+        }
+
+        levisw_bsp_lu_event_t event;
+        esp_err_t err = levisw_bsp_lu_event_receive(&event, timeout_ms);
+        if (err == ESP_OK) {
+            do {
+                const size_t index = (event.line == LEVISW_LU_LINE_1) ? 0U : 1U;
+                lines[index].candidate_level = event.level;
+                lines[index].candidate_since_us = event.timestamp_us;
+                lines[index].pending = true;
+            } while (levisw_bsp_lu_event_receive(&event, 0U) == ESP_OK);
+        } else if (err != ESP_ERR_TIMEOUT) {
+            ESP_LOGE(TAG, "Ошибка очереди LU: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        const int64_t check_us = esp_timer_get_time();
+        for (size_t i = 0; i < 2; i++) {
+            if (!lines[i].pending ||
+                (check_us - lines[i].candidate_since_us) < LU_DEBOUNCE_US) {
+                continue;
+            }
+
+            const bool pin_level = (i == 0U) ? levisw_bsp_lu1_read()
+                                              : levisw_bsp_lu2_read();
+            if (pin_level == lines[i].candidate_level &&
+                pin_level != lines[i].stable_level) {
+                lines[i].stable_level = pin_level;
+                ESP_LOGI(TAG, "LU%u: подтверждённый уровень %s",
+                         (unsigned)(i + 1U), pin_level ? "HIGH" : "LOW");
+            }
+            lines[i].pending = false;
+        }
+
+        const uint32_t dropped = levisw_bsp_lu_event_dropped_count();
+        if (dropped != last_dropped) {
+            ESP_LOGW(TAG, "Очередь LU переполнена: потеряно событий=%" PRIu32, dropped);
+            last_dropped = dropped;
+        }
+    }
+}
 
 static esp_err_t app_check_power(void)
 {
@@ -206,6 +294,13 @@ void app_main(void)
     ESP_LOGI(TAG, "Этап 1: Инициализация BSP платы...");
     ESP_ERROR_CHECK(levisw_bsp_init());
     ESP_LOGI(TAG, "Этап 1: BSP успешно инициализирован");
+
+    /* Отдельная задача принимает LU edge events; никаких переключений матрицы из ISR. */
+    if (xTaskCreate(app_lu_event_monitor_task, "lu_monitor", 3072, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "Не удалось создать задачу мониторинга LU1/LU2; остановка теста");
+        (void)levisw_bsp_deinit();
+        return;
+    }
 
     /* 2. Локальный индикатор LED1 (WS2812C, GPIO23, TP20) */
     ESP_LOGI(TAG, "Этап 2: Инициализация RGB LED WS2812C...");
