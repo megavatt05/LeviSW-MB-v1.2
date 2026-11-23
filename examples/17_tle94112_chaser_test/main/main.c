@@ -314,7 +314,12 @@ void app_main(void)
     if (mc_err == ESP_OK) {
         uint8_t faults = 0;
         /* Включаем OUT1 (бит 0 = 0x01) -> клемма XP2:1 (D0). Выходы OUT2..OUT8 отключены (0) */
-        esp_err_t out_err = mc33879a_set_outputs(&s_mc33879, 0x01, &faults);
+        /* RX MC33879A возвращает диагностику предыдущего 16-битного кадра.
+         * Поэтому после установки OUT1 выполняем отдельный readback-кадр. */
+        esp_err_t out_err = mc33879a_set_outputs(&s_mc33879, 0x01, NULL);
+        if (out_err == ESP_OK) {
+            out_err = mc33879a_read_faults(&s_mc33879, &faults);
+        }
         if (out_err != ESP_OK || faults != 0U) {
             ESP_LOGE(TAG, "MC33879A OUT1 не включён: SPI=%s, FAULT=0x%02X",
                      esp_err_to_name(out_err), faults);
