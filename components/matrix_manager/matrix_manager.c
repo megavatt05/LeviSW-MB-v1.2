@@ -321,6 +321,8 @@ bool matrix_manager_is_ready(const matrix_manager_t *manager)
 {
     return (manager != NULL) && manager->initialized &&
            manager->address_map_loaded && manager->address_map.verified &&
+           ((manager->config.active_unit_drive == MATRIX_UNIT_LOW_SIDE) ||
+            (manager->config.active_unit_drive == MATRIX_UNIT_HIGH_SIDE)) &&
            ((manager->state == MATRIX_MANAGER_STATE_OPEN) ||
             (manager->state == MATRIX_MANAGER_STATE_CONNECTED));
 }

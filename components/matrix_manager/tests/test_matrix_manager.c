@@ -192,6 +192,7 @@ static int test_default_config_is_safe_until_drive_polarity_is_selected(void)
     matrix_manager_address_map_make_sequential_candidate(&map);
     approve_test_map(&map, "SAFE-DEFAULT-TEST");
     CHECK(matrix_manager_set_address_map(&manager, &map) == MATRIX_MANAGER_OK);
+    CHECK(!matrix_manager_is_ready(&manager));
 
     fake.count = 0U;
     CHECK(matrix_manager_connect(&manager, 1U) == MATRIX_MANAGER_ERR_INVALID_STATE);
