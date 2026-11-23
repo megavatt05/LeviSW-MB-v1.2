@@ -58,3 +58,15 @@ cmake -S components/matrix_manager/tests -B build/matrix_manager_tests
 cmake --build build/matrix_manager_tests
 ctest --test-dir build/matrix_manager_tests --output-on-failure
 ```
+
+
+## Address-map verification warning
+
+The core currently uses the conventional sequential numbering assumption: flats 1..10
+map to D0, 11..20 to D1, and so on. This is a **software convention**, not yet
+verified against every physical subscriber contact. In particular, the repository's
+LED bench report labels a D0 x E6 test fixture as "flat 47", while the sequential
+address convention implemented here maps flat 47 to D4 x E6. These two statements
+cannot both describe the same physical apartment wiring. Treat the bench fixture
+label as unverified metadata until the panel harness and all flat coordinates are
+checked. Do not enable apartment routing until this discrepancy is resolved.
