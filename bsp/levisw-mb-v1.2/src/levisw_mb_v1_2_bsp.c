@@ -8,10 +8,12 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "driver/gpio.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_check.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 
@@ -19,6 +21,7 @@ static const char *TAG = "levisw_bsp";
 
 /* Таймаут транзакций I2C (мс) */
 #define LEVISW_I2C_TIMEOUT_MS       50
+#define LEVISW_LU_EVENT_QUEUE_LEN    32U
 
 /* Регистры расширителя портов TI TCA9535PWR (I2C 0x20) */
 #define TCA9535_REG_INPUT_P0        0x00
@@ -92,6 +95,10 @@ typedef struct {
     uint8_t              exp_out_p0;
     uint8_t              exp_out_p1;
     adc_cali_handle_t    adc1_cali;
+    QueueHandle_t        lu_event_queue;
+    bool                 lu1_isr_installed;
+    bool                 lu2_isr_installed;
+    volatile uint32_t    lu_event_dropped;
 } levisw_bsp_state_t;
 
 static levisw_bsp_state_t s_bsp = {0};
@@ -171,6 +178,98 @@ static esp_err_t add_i2c_device(uint16_t addr, i2c_master_dev_handle_t *out_dev)
  * Инициализация и деинициализация подсистем
  * ------------------------------------------------------------------------ */
 
+/*
+ * ISR входов LU1/LU2: никаких логов, I2C/SPI, задержек или управления матрицей.
+ * Событие содержит уровень и монотонную метку времени; дребезг обрабатывает задача.
+ */
+static void lu_gpio_isr_handler(void *arg)
+{
+    const levisw_lu_line_t line = (levisw_lu_line_t)(uintptr_t)arg;
+    const gpio_num_t gpio = (line == LEVISW_LU_LINE_1)
+                          ? LEVISW_PIN_LU1_DO1 : LEVISW_PIN_LU2_DO2;
+    levisw_bsp_lu_event_t event = {
+        .line = line,
+        .level = (gpio_get_level(gpio) != 0),
+        .timestamp_us = esp_timer_get_time(),
+    };
+
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    if (s_bsp.lu_event_queue != NULL &&
+        xQueueSendFromISR(s_bsp.lu_event_queue, &event,
+                          &higher_priority_task_woken) != pdTRUE) {
+        s_bsp.lu_event_dropped++;
+    }
+
+    if (higher_priority_task_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static void deinit_lu_interrupts(void)
+{
+    if (s_bsp.lu1_isr_installed) {
+        (void)gpio_intr_disable(LEVISW_PIN_LU1_DO1);
+        (void)gpio_isr_handler_remove(LEVISW_PIN_LU1_DO1);
+        s_bsp.lu1_isr_installed = false;
+    }
+    if (s_bsp.lu2_isr_installed) {
+        (void)gpio_intr_disable(LEVISW_PIN_LU2_DO2);
+        (void)gpio_isr_handler_remove(LEVISW_PIN_LU2_DO2);
+        s_bsp.lu2_isr_installed = false;
+    }
+}
+
+static esp_err_t init_lu_interrupts(void)
+{
+    ESP_RETURN_ON_FALSE(s_bsp.lu_event_queue != NULL, ESP_ERR_INVALID_STATE,
+                        TAG, "Очередь событий LU не создана");
+
+    /*
+     * GPIO ISR service глобален для ESP-IDF. ESP_ERR_INVALID_STATE означает,
+     * что сервис уже установлен другим компонентом; в этом случае используем его.
+     */
+    esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        return err;
+    }
+    if (err == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "GPIO ISR service уже установлен другим компонентом");
+    }
+
+    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(LEVISW_PIN_LU1_DO1,
+                                             lu_gpio_isr_handler,
+                                             (void *)(uintptr_t)LEVISW_LU_LINE_1),
+                        TAG, "Не удалось добавить ISR для LU1");
+    s_bsp.lu1_isr_installed = true;
+
+    err = gpio_isr_handler_add(LEVISW_PIN_LU2_DO2,
+                               lu_gpio_isr_handler,
+                               (void *)(uintptr_t)LEVISW_LU_LINE_2);
+    if (err != ESP_OK) {
+        deinit_lu_interrupts();
+        return err;
+    }
+    s_bsp.lu2_isr_installed = true;
+
+    err = gpio_set_intr_type(LEVISW_PIN_LU1_DO1, GPIO_INTR_ANYEDGE);
+    if (err == ESP_OK) {
+        err = gpio_set_intr_type(LEVISW_PIN_LU2_DO2, GPIO_INTR_ANYEDGE);
+    }
+    if (err == ESP_OK) {
+        err = gpio_intr_enable(LEVISW_PIN_LU1_DO1);
+    }
+    if (err == ESP_OK) {
+        err = gpio_intr_enable(LEVISW_PIN_LU2_DO2);
+    }
+    if (err != ESP_OK) {
+        deinit_lu_interrupts();
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Прерывания LU1(GPIO36)/LU2(GPIO37) включены по обоим фронтам");
+    return ESP_OK;
+}
+
 static esp_err_t init_gpio(void)
 {
     /* Сначала конфигурируем GPIO как выходы, затем задаём безопасные уровни.
@@ -203,6 +302,7 @@ static esp_err_t init_gpio(void)
         .intr_type    = GPIO_INTR_DISABLE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&in_cfg), TAG, "Ошибка настройки входных GPIO");
+    ESP_RETURN_ON_ERROR(init_lu_interrupts(), TAG, "Ошибка включения прерываний LU1/LU2");
 
     return ESP_OK;
 }
@@ -343,6 +443,13 @@ esp_err_t levisw_bsp_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    s_bsp.lu_event_queue = xQueueCreate(LEVISW_LU_EVENT_QUEUE_LEN,
+                                        sizeof(levisw_bsp_lu_event_t));
+    if (s_bsp.lu_event_queue == NULL) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
     ESP_GOTO_ON_ERROR(init_gpio(), cleanup, TAG, "init_gpio failed");
     ESP_GOTO_ON_ERROR(init_i2c(), cleanup, TAG, "init_i2c failed");
     ESP_GOTO_ON_ERROR(init_tca9535(), cleanup, TAG, "init_tca9535 failed");
@@ -375,6 +482,12 @@ cleanup:
 
 esp_err_t levisw_bsp_deinit(void)
 {
+    deinit_lu_interrupts();
+    if (s_bsp.lu_event_queue != NULL) {
+        vQueueDelete(s_bsp.lu_event_queue);
+        s_bsp.lu_event_queue = NULL;
+    }
+
     if (s_bsp.handles.i2c_tca9535 != NULL) {
         (void)i2c_write_reg8(s_bsp.handles.i2c_tca9535, TCA9535_REG_OUTPUT_P0, 0x00);
         (void)i2c_write_reg8(s_bsp.handles.i2c_tca9535, TCA9535_REG_OUTPUT_P1, 0x00);
@@ -765,6 +878,24 @@ bool levisw_bsp_lu1_read(void)
 bool levisw_bsp_lu2_read(void)
 {
     return gpio_get_level(LEVISW_PIN_LU2_DO2) != 0;
+}
+
+esp_err_t levisw_bsp_lu_event_receive(levisw_bsp_lu_event_t *event, uint32_t timeout_ms)
+{
+    ESP_RETURN_ON_FALSE(s_bsp.initialized, ESP_ERR_INVALID_STATE, TAG, "BSP не инициализирован");
+    ESP_RETURN_ON_FALSE(event != NULL, ESP_ERR_INVALID_ARG, TAG, "event == NULL");
+    ESP_RETURN_ON_FALSE(s_bsp.lu_event_queue != NULL, ESP_ERR_INVALID_STATE, TAG,
+                        "Очередь событий LU не создана");
+
+    const TickType_t timeout_ticks = (timeout_ms == UINT32_MAX)
+                                   ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return (xQueueReceive(s_bsp.lu_event_queue, event, timeout_ticks) == pdTRUE)
+         ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+uint32_t levisw_bsp_lu_event_dropped_count(void)
+{
+    return s_bsp.lu_event_dropped;
 }
 
 esp_err_t levisw_bsp_vamp_read_mv(uint32_t *vamp_mv)
