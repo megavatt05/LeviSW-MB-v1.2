@@ -5,6 +5,7 @@ idf_component_register(
         levisw-mb-v1.2
         lu_event_dispatcher
         call_runtime
+        matrix_manager_espidf
         freertos
         esp_timer
         log
