@@ -162,7 +162,13 @@ static void tle94112_chaser_task(void *pvParameters)
     /* Включаем полумост PO3 (HB3, клемма XP3:7 / TP41) статически в Low-Side (GND) */
     esp_err_t err = tle94112_set_hb_state(s_tle_handle, TLE_HB3, TLE_HB_LS_ON);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Ошибка включения PO3 (HB3): %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Ошибка включения PO3 (HB3): %s. Отключаем систему.", esp_err_to_name(err));
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        vTaskDelete(NULL);
+        return;
     } else {
         ESP_LOGI(TAG, ">>> [СТАТИЧЕСКИ ВКЛЮЧЕН] Полумост PO3 (XP3:7 / TP41) = LS_ON (GND) <<<");
     }
@@ -308,7 +314,16 @@ void app_main(void)
     if (mc_err == ESP_OK) {
         uint8_t faults = 0;
         /* Включаем OUT1 (бит 0 = 0x01) -> клемма XP2:1 (D0). Выходы OUT2..OUT8 отключены (0) */
-        ESP_ERROR_CHECK(mc33879a_set_outputs(&s_mc33879, 0x01, &faults));
+        esp_err_t out_err = mc33879a_set_outputs(&s_mc33879, 0x01, &faults);
+        if (out_err != ESP_OK || faults != 0U) {
+            ESP_LOGE(TAG, "MC33879A OUT1 не включён: SPI=%s, FAULT=0x%02X",
+                     esp_err_to_name(out_err), faults);
+            (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+            (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+            (void)levisw_bsp_drivers_enable(false);
+            (void)levisw_bsp_power_set(false, false, false, false);
+            return;
+        }
         ESP_LOGI(TAG, "D1 MC33879A OUT1 (XP2:1, D0) ВКЛЮЧЕН в +V2! Общий анод запитан.");
     } else {
         ESP_LOGE(TAG, "Ошибка инициализации D1 MC33879A: %s", esp_err_to_name(mc_err));
