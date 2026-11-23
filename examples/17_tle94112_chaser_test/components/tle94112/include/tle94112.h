@@ -8,7 +8,7 @@
  *   tle94112_emergency_stop(), tle94112_get_last_fault_reason()
  *
  * SPI Mode: Mode 1 (CPOL=0, CPHA=1)
- * Bit Order: MSB First
+ * Bit Order: LSB First (SPI_DEVICE_BIT_LSBFIRST)
  * Protocol: 16-bit frames (Address + Data)
  */
 
