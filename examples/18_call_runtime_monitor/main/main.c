@@ -212,6 +212,17 @@ void app_main(void)
         matrix_manager_init(&matrix, &matrix_ops, &matrix_config);
     ESP_ERROR_CHECK(matrix_status == MATRIX_MANAGER_OK ? ESP_OK : ESP_FAIL);
 
+    /*
+     * Simulation fixture only: explicitly mark the conventional map usable
+     * so this software monitor can exercise the whole FSM. Never copy this
+     * verification flag into a physical-board profile without commissioning.
+     */
+    matrix_manager_address_map_t simulated_map;
+    matrix_manager_address_map_make_sequential_candidate(&simulated_map);
+    simulated_map.verified = true;
+    ESP_ERROR_CHECK(matrix_manager_set_address_map(&matrix, &simulated_map) ==
+                    MATRIX_MANAGER_OK ? ESP_OK : ESP_FAIL);
+
     call_runtime_config_t runtime_config;
     call_runtime_default_config(&runtime_config);
     /* Leave call timeouts disabled until measured on the actual intercom. */
