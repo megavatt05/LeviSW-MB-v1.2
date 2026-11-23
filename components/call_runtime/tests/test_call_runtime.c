@@ -235,7 +235,8 @@ static int test_second_call_is_ignored_while_busy(void)
     const unsigned writes = fake.writes;
 
     /* Input from the other LU line cannot change the active apartment route. */
-    now_us += 1000U;
+    /* Runtime re-baselines both lines at burst completion; send a truly newer edge. */
+    now_us += 81200U;
     const lu_decoder_edge_t other_line = { LU_DECODER_LINE_2, true, now_us };
     CHECK(call_runtime_feed_lu_edge(&runtime, &other_line) == CALL_RUNTIME_OK);
     CHECK(call_runtime_get_apartment(&runtime) == 12U);
