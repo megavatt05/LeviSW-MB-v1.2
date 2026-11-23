@@ -247,7 +247,9 @@ void tle94112_deinit(tle94112_handle_t handle) {
 
 esp_err_t tle94112_set_hb_state(tle94112_handle_t handle, tle_hb_idx_t hb, tle_hb_state_t state) {
     if (!handle) return ESP_ERR_INVALID_ARG;
-    if (hb > TLE_HB12) return ESP_ERR_INVALID_ARG;
+    if ((unsigned)hb >= 12U || (unsigned)state > (unsigned)TLE_HB_BRAKE) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
 
@@ -277,26 +279,24 @@ esp_err_t tle94112_set_hb_state(tle94112_handle_t handle, tle_hb_idx_t hb, tle_h
         current_val &= ~(0x03 << (TLE_HB2 * 2));
     }
 
-    handle->ctrl_cache[reg_idx] = current_val;
-
-    // Отправка команды
+    // Сначала отправляем команду. Кеш обновляем только после успешной передачи.
     esp_err_t ret = spi_transaction(handle, addr, current_val, NULL);
-    
-    // Очистка ошибок после команды для немедленной реактивации выхода
     if (ret == ESP_OK) {
-        spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
+        handle->ctrl_cache[reg_idx] = current_val;
+    } else {
+        ESP_LOGE(TAG, "HB control write failed (register 0x%02X): %s",
+                 addr, esp_err_to_name(ret));
     }
 
+    // Диагностические флаги здесь НЕ очищаем: они должны оставаться доступны
+    // приложению до явного вызова tle94112_clear_errors() после фиксации причины.
     xSemaphoreGive(handle->mutex);
     return ret;
 }
 
 esp_err_t tle94112_set_all_hb_state(tle94112_handle_t handle, tle_hb_state_t state) {
-    if (!handle) return ESP_ERR_INVALID_ARG;
-    
+    if (!handle || (unsigned)state > (unsigned)TLE_HB_BRAKE) return ESP_ERR_INVALID_ARG;
+
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
 
     uint8_t val = 0;
@@ -305,36 +305,48 @@ esp_err_t tle94112_set_all_hb_state(tle94112_handle_t handle, tle_hb_state_t sta
         val |= ((uint8_t)state << (i * 2));
     }
 
-    // Если выключаем (FLOATING), гарантируем полное обнуление кеша
-    handle->ctrl_cache[0] = val;
-    handle->ctrl_cache[1] = val;
-    handle->ctrl_cache[2] = val;
+    // Обновляем кеш только для тех банков, запись которых подтверждена SPI.
+    esp_err_t ret = spi_transaction(handle, REG_HB_ACT_1_CTRL_WR, val, NULL);
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[0] = val;
+        ret = spi_transaction(handle, REG_HB_ACT_2_CTRL_WR, val, NULL);
+    }
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[1] = val;
+        ret = spi_transaction(handle, REG_HB_ACT_3_CTRL_WR, val, NULL);
+    }
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[2] = val;
+    } else {
+        ESP_LOGE(TAG, "Failed to set all half-bridges: %s", esp_err_to_name(ret));
+    }
 
-    spi_transaction(handle, REG_HB_ACT_1_CTRL_WR, val, NULL);
-    spi_transaction(handle, REG_HB_ACT_2_CTRL_WR, val, NULL);
-    spi_transaction(handle, REG_HB_ACT_3_CTRL_WR, val, NULL);
-    
-    // Очистка всех статусных регистров
-    spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-
+    // Не стираем диагностические регистры как побочный эффект управления выходами.
     xSemaphoreGive(handle->mutex);
-    return ESP_OK;
+    return ret;
 }
 
 esp_err_t tle94112_clear_errors(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
-    // Очистка ВСЕХ статусных регистров (согласно даташиту TLE94112EL для снятия Latch-off)
-    spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
-    return ESP_OK;
+
+    static const uint8_t clear_regs[] = {
+        REG_SYS_DIAG_1_CLR, REG_SYS_DIAG_2_CLR, REG_SYS_DIAG_3_CLR,
+        REG_SYS_DIAG_4_CLR, REG_SYS_DIAG_5_CLR, REG_SYS_DIAG_6_CLR,
+        REG_SYS_DIAG_7_CLR
+    };
+
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(clear_regs) / sizeof(clear_regs[0]); ++i) {
+        ret = spi_transaction(handle, clear_regs[i], 0x00, NULL);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to clear diagnostic register 0x%02X: %s",
+                     clear_regs[i], esp_err_to_name(ret));
+            break;
+        }
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_diagnose(tle94112_handle_t handle) {
@@ -372,22 +384,34 @@ esp_err_t tle94112_get_sys_diag1(tle94112_handle_t handle, uint8_t *sys_diag_out
 
 esp_err_t tle94112_read_all_diag(tle94112_handle_t handle, uint8_t diag[7]) {
     if (!handle || !diag) return ESP_ERR_INVALID_ARG;
-    spi_transaction(handle, REG_SYS_DIAG_1_RD, 0, &diag[0]);
-    spi_transaction(handle, REG_SYS_DIAG_2_RD, 0, &diag[1]);
-    spi_transaction(handle, REG_SYS_DIAG_3_RD, 0, &diag[2]);
-    spi_transaction(handle, REG_SYS_DIAG_4_RD, 0, &diag[3]);
-    spi_transaction(handle, REG_SYS_DIAG_5_RD, 0, &diag[4]);
-    spi_transaction(handle, REG_SYS_DIAG_6_RD, 0, &diag[5]);
-    spi_transaction(handle, REG_SYS_DIAG_7_RD, 0, &diag[6]);
-    return ESP_OK;
+    static const uint8_t regs[] = {
+        REG_SYS_DIAG_1_RD, REG_SYS_DIAG_2_RD, REG_SYS_DIAG_3_RD,
+        REG_SYS_DIAG_4_RD, REG_SYS_DIAG_5_RD, REG_SYS_DIAG_6_RD,
+        REG_SYS_DIAG_7_RD
+    };
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i) {
+        ret = spi_transaction(handle, regs[i], 0, &diag[i]);
+        if (ret != ESP_OK) break;
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_read_all_act(tle94112_handle_t handle, uint8_t act[3]) {
     if (!handle || !act) return ESP_ERR_INVALID_ARG;
-    spi_transaction(handle, REG_HB_ACT_1_CTRL_RD, 0, &act[0]);
-    spi_transaction(handle, REG_HB_ACT_2_CTRL_RD, 0, &act[1]);
-    spi_transaction(handle, REG_HB_ACT_3_CTRL_RD, 0, &act[2]);
-    return ESP_OK;
+    static const uint8_t regs[] = {
+        REG_HB_ACT_1_CTRL_RD, REG_HB_ACT_2_CTRL_RD, REG_HB_ACT_3_CTRL_RD
+    };
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i) {
+        ret = spi_transaction(handle, regs[i], 0, &act[i]);
+        if (ret != ESP_OK) break;
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_get_overcurrent(tle94112_handle_t handle, uint16_t *oc_mask) {
@@ -484,21 +508,21 @@ esp_err_t tle94112_get_openload(tle94112_handle_t handle, uint16_t *ol_mask) {
 esp_err_t tle94112_clear_overcurrent(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-
-    return ESP_OK;
+    esp_err_t ret = spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    ret = spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    return spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
 }
 
 esp_err_t tle94112_clear_openload(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
-
-    return ESP_OK;
+    esp_err_t ret = spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    ret = spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    return spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
 }
 
 esp_err_t tle94112_full_diagnose(tle94112_handle_t handle) {
