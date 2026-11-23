@@ -11,6 +11,7 @@ extern "C" {
 #define MATRIX_MANAGER_FLAT_COUNT 80U
 #define MATRIX_MANAGER_DOZEN_COUNT 8U
 #define MATRIX_MANAGER_UNIT_COUNT 10U
+#define MATRIX_MANAGER_ADDRESS_MAP_VERSION 1U
 
 typedef enum {
     MATRIX_MANAGER_OK = 0,
@@ -18,6 +19,7 @@ typedef enum {
     MATRIX_MANAGER_ERR_INVALID_STATE = -2,
     MATRIX_MANAGER_ERR_IO = -3,
     MATRIX_MANAGER_ERR_FAULT = -4,
+    MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED = -5,
 } matrix_manager_status_t;
 
 typedef enum {
@@ -32,6 +34,36 @@ typedef enum {
     MATRIX_MANAGER_STATE_CONNECTED,
     MATRIX_MANAGER_STATE_FAULT,
 } matrix_manager_state_t;
+
+/* Physical crosspoint coordinate for one apartment: D0..D7 and E0..E9. */
+typedef struct {
+    uint8_t decade;
+    uint8_t unit;
+} matrix_manager_coordinate_t;
+
+/*
+ * Board-specific apartment map.
+ *
+ * verified is a commissioning approval flag, not an automatic hardware
+ * measurement. Set it true only after all apartment contacts have been
+ * traced against the current board/harness revision and independently checked.
+ */
+typedef struct {
+    uint8_t version;
+    bool verified;
+    matrix_manager_coordinate_t apartments[MATRIX_MANAGER_FLAT_COUNT];
+} matrix_manager_address_map_t;
+
+/*
+ * Build the conventional sequential numbering as an UNVERIFIED candidate.
+ * It is useful for unit tests and simulation; it must not be enabled on a
+ * physical panel without a completed continuity/commissioning record.
+ */
+void matrix_manager_address_map_make_sequential_candidate(
+    matrix_manager_address_map_t *map);
+
+/* Validate format, D/E ranges, and one-to-one use of all 80 crosspoints. */
+bool matrix_manager_address_map_validate(const matrix_manager_address_map_t *map);
 
 /*
  * Hardware adapter contract:
@@ -62,9 +94,11 @@ typedef struct {
 typedef struct {
     matrix_manager_hw_ops_t hw;
     matrix_manager_config_t config;
+    matrix_manager_address_map_t address_map;
     matrix_manager_state_t state;
     uint8_t active_apartment; /* 0 means no active route; otherwise 1..80. */
     matrix_manager_status_t last_fault;
+    bool address_map_loaded;
     bool initialized;
 } matrix_manager_t;
 
@@ -75,7 +109,15 @@ matrix_manager_status_t matrix_manager_init(matrix_manager_t *manager,
                                              const matrix_manager_hw_ops_t *hw,
                                              const matrix_manager_config_t *config);
 
-/* Route one apartment (1..80). Re-routing always performs break-before-make. */
+/*
+ * Install a validated board map while the matrix is OPEN.
+ * Unverified maps may be installed for inspection but cannot be routed.
+ */
+matrix_manager_status_t matrix_manager_set_address_map(
+    matrix_manager_t *manager,
+    const matrix_manager_address_map_t *map);
+
+/* Route one apartment (1..80). Requires an installed map with verified=true. */
 matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
                                                 uint8_t apartment);
 
