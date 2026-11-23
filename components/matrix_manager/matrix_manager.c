@@ -34,6 +34,19 @@ bool matrix_manager_address_map_validate(const matrix_manager_address_map_t *map
         return false;
     }
 
+    if ((memchr(map->pcb_revision, '\0', sizeof(map->pcb_revision)) == NULL) ||
+        (memchr(map->harness_revision, '\0', sizeof(map->harness_revision)) == NULL) ||
+        (memchr(map->commissioning_record, '\0', sizeof(map->commissioning_record)) == NULL)) {
+        return false;
+    }
+
+    if (map->verified &&
+        ((map->pcb_revision[0] == '\0') ||
+         (map->harness_revision[0] == '\0') ||
+         (map->commissioning_record[0] == '\0'))) {
+        return false;
+    }
+
     uint16_t used[MATRIX_MANAGER_DOZEN_COUNT] = {0U};
 
     for (size_t i = 0U; i < MATRIX_MANAGER_FLAT_COUNT; ++i) {
@@ -66,16 +79,12 @@ static matrix_manager_status_t safe_open_once(matrix_manager_t *manager)
     matrix_manager_status_t result = MATRIX_MANAGER_OK;
     matrix_manager_status_t step;
 
-    /* Open the analog gate first, then remove both drive sources. Try every step. */
     step = manager->hw.set_mux(manager->hw.context, 0U, false);
     result = remember_first(result, step);
-
     step = manager->hw.set_d_mask(manager->hw.context, 0U);
     result = remember_first(result, step);
-
     step = manager->hw.set_all_units(manager->hw.context, MATRIX_UNIT_FLOATING);
     result = remember_first(result, step);
-
     step = manager->hw.set_drivers_enabled(manager->hw.context, false);
     result = remember_first(result, step);
 
@@ -102,7 +111,6 @@ void matrix_manager_default_config(matrix_manager_config_t *config)
     config->break_before_make_us = 150U;
     config->driver_wakeup_us = 15000U;
     config->route_settle_us = 500U;
-    /* Deliberately no default polarity: board integration must select HS or LS. */
     config->active_unit_drive = MATRIX_UNIT_FLOATING;
 }
 
@@ -177,22 +185,20 @@ matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
     }
     manager->state = MATRIX_MANAGER_STATE_OPEN;
 
-    manager->hw.delay_us(manager->hw.context, manager->config.break_before_make_us);
-
     const matrix_manager_coordinate_t coordinate =
         manager->address_map.apartments[(size_t)(apartment - 1U)];
     const uint8_t decade = coordinate.decade;
     const uint8_t unit = coordinate.unit;
     const uint8_t d_mask = (uint8_t)(1U << decade);
 
-    /* Wake the drivers while all routes remain physically open. */
+    manager->hw.delay_us(manager->hw.context, manager->config.break_before_make_us);
+
     status = manager->hw.set_drivers_enabled(manager->hw.context, true);
     if (status != MATRIX_MANAGER_OK) {
         return latch_fault(manager, status);
     }
     manager->hw.delay_us(manager->hw.context, manager->config.driver_wakeup_us);
 
-    /* Configure D/E while ADG1608 is disabled; close the analog gate last. */
     status = manager->hw.set_mux(manager->hw.context, decade, false);
     if (status != MATRIX_MANAGER_OK) {
         return latch_fault(manager, status);
@@ -289,6 +295,7 @@ uint8_t matrix_manager_get_active_apartment(const matrix_manager_t *manager)
 bool matrix_manager_is_ready(const matrix_manager_t *manager)
 {
     return (manager != NULL) && manager->initialized &&
+           manager->address_map_loaded && manager->address_map.verified &&
            ((manager->state == MATRIX_MANAGER_STATE_OPEN) ||
             (manager->state == MATRIX_MANAGER_STATE_CONNECTED));
 }
