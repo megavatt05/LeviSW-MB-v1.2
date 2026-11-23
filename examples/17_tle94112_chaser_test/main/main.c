@@ -96,15 +96,31 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
 static esp_err_t app_check_power(void)
 {
     bool pg = false;
-    ESP_ERROR_CHECK(levisw_bsp_power_good(&pg));
+    esp_err_t err = levisw_bsp_power_good(&pg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать PGOOD: %s", esp_err_to_name(err));
+        return err;
+    }
 
     float v1_v = 0.0f, v1_ma = 0.0f;
     float v2_v = 0.0f, v2_ma = 0.0f;
     uint32_t vamp_mv = 0;
 
-    (void)levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
-    (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
-    (void)levisw_bsp_vamp_read_mv(&vamp_mv);
+    err = levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать INA226 (+V1): %s", esp_err_to_name(err));
+        return err;
+    }
+    err = levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать INA226 (+V2): %s", esp_err_to_name(err));
+        return err;
+    }
+    err = levisw_bsp_vamp_read_mv(&vamp_mv);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать +Vamp ADC: %s", esp_err_to_name(err));
+        return err;
+    }
 
     ESP_LOGI(TAG, "Телеметрия питания: PG=%d | +Vamp=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
              pg ? 1 : 0, (float)vamp_mv / 1000.0f, v1_v, v2_v, v2_ma);
@@ -133,7 +149,14 @@ static void tle94112_chaser_task(void *pvParameters)
     ESP_LOGI(TAG, "===============================================================");
 
     /* Гарантированное отключение всех полумостов перед стартом */
-    tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+    esp_err_t safe_err = tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+    if (safe_err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось перевести TLE94112 в FLOATING: %s", esp_err_to_name(safe_err));
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        vTaskDelete(NULL);
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(50));
 
     /* Включаем полумост PO3 (HB3, клемма XP3:7 / TP41) статически в Low-Side (GND) */
@@ -148,7 +171,16 @@ static void tle94112_chaser_task(void *pvParameters)
         /* Дежурный цикл: просто удерживаем состояние и контролируем ток */
         vTaskDelay(pdMS_TO_TICKS(3000));
         float v2_v = 0.0f, v2_ma = 0.0f;
-        (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+        esp_err_t monitor_err = levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+        if (monitor_err != ESP_OK) {
+            ESP_LOGE(TAG, "Потеря телеметрии +V2: %s. Аварийное отключение.", esp_err_to_name(monitor_err));
+            (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+            (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+            (void)levisw_bsp_drivers_enable(false);
+            (void)levisw_bsp_power_set(false, false, false, false);
+            vTaskDelete(NULL);
+            return;
+        }
         ESP_LOGI(TAG, "PO3 (XP3:7) [GND] + D0 (XP2:1) [+V2=%.2f В, I=%.1f мА] -> Светодиод ГОРИТ НЕПРЕРЫВНО", v2_v, v2_ma);
     }
 }
@@ -236,6 +268,8 @@ void app_main(void)
     if (s_tle_handle == NULL) {
         ESP_LOGE(TAG, "КРИТИЧЕСКАЯ ОШИБКА: Не удалось инициализировать драйвер TLE94112EL!");
         app_led_set_rgb(60, 0, 0);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
         return;
     }
 
@@ -278,11 +312,23 @@ void app_main(void)
         ESP_LOGI(TAG, "D1 MC33879A OUT1 (XP2:1, D0) ВКЛЮЧЕН в +V2! Общий анод запитан.");
     } else {
         ESP_LOGE(TAG, "Ошибка инициализации D1 MC33879A: %s", esp_err_to_name(mc_err));
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        return;
     }
 
     /* 9. Создание задачи циклического бегущего огня */
     ESP_LOGI(TAG, "Этап 9: Запуск задачи tle94112_chaser_task (бегущий огонь E0..E9)...");
-    xTaskCreate(tle94112_chaser_task, "tle_chaser", 4096, NULL, 5, NULL);
+    BaseType_t task_created = xTaskCreate(tle94112_chaser_task, "tle_chaser", 4096, NULL, 5, NULL);
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Не удалось создать задачу коммутации; отключаем силовые выходы.");
+        (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        return;
+    }
 
     ESP_LOGI(TAG, "Приложение готово к работе. Запущен бегущий огонь (E0..E9) с питанием от XP2:1.");
 }
