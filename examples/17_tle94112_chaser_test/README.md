@@ -72,3 +72,40 @@ ctest --test-dir build/lu_decoder_tests --output-on-failure
 ```
 
 Покрыты адреса 1–80, короткий ложный импульс, потеря одного перехода и выход номера за диапазон.
+
+## Архитектура боевого контроллера (новые компоненты)
+
+Добавлены независимые компоненты:
+
+- `components/matrix_manager` — единственный владелец матрицы D/E, реализует
+  break-before-make, одно активное пересечение, fail-safe отключение и блокировку
+  повторного подключения после аппаратной ошибки.
+- `components/call_controller` — FSM
+  `STANDBY → CAPTURE_NUMBER → VALIDATE_TARGET → ROUTE_PREPARE → RINGING →
+  ANSWER_VERIFY → TALKING → HANGUP`, с отдельным FAULT и ручным восстановлением.
+- `components/matrix_manager_espidf` — адаптер абстрактных операций к BSP,
+  MC33879A и TLE94112EL. Он использует BSP-таблицу нелинейного E→HB маппинга
+  и дополнительный SPI-кадр чтения диагностики MC33879A.
+
+**Важно:** пример 17 остаётся аппаратным тестом драйверов и пока продолжает
+содержать прямое управление TLE/MC в тестовой задаче. Новые компоненты добавлены
+в сборочную конфигурацию, но FSM ещё не запускается в этом примере. Не запускайте
+два владельца матрицы одновременно. Следующим интеграционным изменением будет
+отдельное приложение контроллера, где все прямые обращения к ADG/MC/TLE будут
+заменены вызовами Call Controller → Matrix Manager.
+
+Для принятия вызова FSM принимает семантические события от декодера и будущего
+датчика трубки. Порог определения снятия трубки не задан: DD6 измеряет шину +V2,
+а не абонентскую линию. Тайм-ауты в FSM по умолчанию отключены до измерения реальных
+временных диаграмм домофонной панели.
+
+Нативные тесты:
+```sh
+cmake -S components/matrix_manager/tests -B build/matrix_manager_tests
+cmake --build build/matrix_manager_tests
+ctest --test-dir build/matrix_manager_tests --output-on-failure
+
+cmake -S components/call_controller/tests -B build/call_controller_tests
+cmake --build build/call_controller_tests
+ctest --test-dir build/call_controller_tests --output-on-failure
+```
