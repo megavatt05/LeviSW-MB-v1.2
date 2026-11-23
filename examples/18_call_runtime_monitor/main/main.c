@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,12 +17,6 @@ static const char *TAG = "CALL_RUNTIME_MONITOR";
 static lu_event_dispatcher_handle_t s_dispatcher;
 static call_runtime_t s_runtime;
 
-/*
- * IMPORTANT: This example intentionally uses a software-only Matrix Manager
- * adapter. It never calls ADG1608, MC33879A, TLE94112, EN-DE, or power-enable
- * APIs. It validates LU -> decoder -> handset -> FSM integration without
- * physically switching subscriber lines.
- */
 typedef struct {
     bool mux_enabled;
     uint8_t decade;
@@ -86,12 +81,12 @@ static void call_state_changed(void *ctx,
              (int)previous, (int)current, (unsigned)apartment);
 
     if (current == CALL_STATE_RINGING) {
+        const uint8_t index = (uint8_t)(apartment - 1U);
         ESP_LOGI(TAG,
-                 "SIMULATION ONLY: requested route flat %u => D%u x E%u; "
-                 "no electrical outputs were changed",
+                 "SIMULATION ONLY: flat %u => D%u x E%u; no electrical outputs changed",
                  (unsigned)apartment,
-                 (unsigned)((apartment - 1U) / 10U),
-                 (unsigned)((apartment - 1U) % 10U));
+                 (unsigned)(index / 10U),
+                 (unsigned)(index % 10U));
     }
     if (current == CALL_STATE_TALKING) {
         ESP_LOGI(TAG, "SIMULATION ONLY: handset pickup verified");
@@ -129,13 +124,7 @@ static void runtime_task(void *arg)
             ESP_LOGE(TAG, "Decoder queue error: %s", esp_err_to_name(err));
         }
 
-        /*
-         * Drain the currently queued raw edges before polling the decoder's
-         * burst timeout. Dispatcher priority is higher than this task, so any
-         * pending BSP events are forwarded before this consumer runs again.
-         * This prevents a scheduler delay from closing a frame while older
-         * timestamped edges are still waiting in the subscriber queue.
-         */
+        /* Drain timestamped edges before polling the decoder burst timeout. */
         while (err == ESP_OK) {
             const lu_decoder_edge_t edge = {
                 .line = (event.line == LEVISW_LU_LINE_1)
@@ -148,7 +137,6 @@ static void runtime_task(void *arg)
             if (feed_status != CALL_RUNTIME_OK) {
                 ESP_LOGW(TAG, "LU feed status=%d", (int)feed_status);
             }
-
             err = lu_event_dispatcher_decoder_receive(s_dispatcher, &event, 0U);
         }
 
@@ -163,15 +151,13 @@ static void runtime_task(void *arg)
                 levisw_bsp_lu1_read(),
                 levisw_bsp_lu2_read(),
             };
-            ESP_LOGE(TAG,
-                     "LU stream loss: BSP=%" PRIu32 ", decoder=%" PRIu32
-                     ", read_errors=%" PRIu32,
+            ESP_LOGE(TAG, "LU stream loss: BSP=%" PRIu32 ", decoder=%" PRIu32
+                          ", read_errors=%" PRIu32,
                      bsp_dropped - last_bsp_dropped,
                      dispatch_stats.decoder_dropped - last_decoder_dropped,
                      dispatch_stats.bsp_read_errors - last_read_errors);
             (void)call_runtime_notify_event_loss(&s_runtime, current_levels,
                                                  esp_timer_get_time());
-
             last_bsp_dropped = bsp_dropped;
             last_decoder_dropped = dispatch_stats.decoder_dropped;
             last_read_errors = dispatch_stats.bsp_read_errors;
@@ -212,20 +198,18 @@ void app_main(void)
         matrix_manager_init(&matrix, &matrix_ops, &matrix_config);
     ESP_ERROR_CHECK(matrix_status == MATRIX_MANAGER_OK ? ESP_OK : ESP_FAIL);
 
-    /*
-     * Simulation fixture only: explicitly mark the conventional map usable
-     * so this software monitor can exercise the whole FSM. Never copy this
-     * verification flag into a physical-board profile without commissioning.
-     */
     matrix_manager_address_map_t simulated_map;
     matrix_manager_address_map_make_sequential_candidate(&simulated_map);
     simulated_map.verified = true;
+    (void)snprintf(simulated_map.pcb_revision, sizeof(simulated_map.pcb_revision), "%s", "SIMULATED");
+    (void)snprintf(simulated_map.harness_revision, sizeof(simulated_map.harness_revision), "%s", "NO-HARNESS");
+    (void)snprintf(simulated_map.commissioning_record, sizeof(simulated_map.commissioning_record),
+                   "%s", "SOFTWARE-SIMULATION-ONLY");
     ESP_ERROR_CHECK(matrix_manager_set_address_map(&matrix, &simulated_map) ==
                     MATRIX_MANAGER_OK ? ESP_OK : ESP_FAIL);
 
     call_runtime_config_t runtime_config;
     call_runtime_default_config(&runtime_config);
-    /* Leave call timeouts disabled until measured on the actual intercom. */
 
     const bool initial_levels[2] = {
         levisw_bsp_lu1_read(),
@@ -250,7 +234,6 @@ void app_main(void)
     }
     if (xTaskCreate(monitor_task, "lu_monitor", 3072, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(TAG, "Could not create LU monitor task");
-        /* Runtime continues to own its dedicated decoder queue; monitor drops are diagnostic only. */
     }
 
     ESP_LOGI(TAG, "Runtime monitor started: LU edges are decoded and passed to FSM.");
