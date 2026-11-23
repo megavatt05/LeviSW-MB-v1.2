@@ -113,6 +113,26 @@ static int test_missing_half_pulse_is_invalid(void)
     return 0;
 }
 
+
+static int test_missing_first_transition_invalidates_next_burst(void)
+{
+    lu_decoder_t decoder;
+    lu_decoder_config_t config;
+    lu_decoder_default_config(&config);
+    CHECK(lu_decoder_init(&decoder, &config));
+    CHECK(lu_decoder_set_line_level(&decoder, LU_DECODER_LINE_1, false, 0));
+
+    bool level = false;
+    int64_t time_us = 1000;
+    emit_address(&decoder, LU_DECODER_LINE_1, 9U, &level, &time_us, 0U);
+
+    lu_decoder_result_t result;
+    CHECK(finish_and_get(&decoder, time_us + 200, &result));
+    CHECK(!result.valid);
+    CHECK(result.apartment == 0U);
+    return 0;
+}
+
 static int test_complete_missing_pulse_limitation_is_explicit(void)
 {
     lu_decoder_t decoder;
@@ -157,6 +177,7 @@ int main(void)
     CHECK(test_all_apartment_addresses() == 0);
     CHECK(test_short_glitch_is_rejected() == 0);
     CHECK(test_missing_half_pulse_is_invalid() == 0);
+    CHECK(test_missing_first_transition_invalidates_next_burst() == 0);
     CHECK(test_complete_missing_pulse_limitation_is_explicit() == 0);
     CHECK(test_out_of_range_address_is_invalid() == 0);
     puts("All LU decoder tests passed.");
