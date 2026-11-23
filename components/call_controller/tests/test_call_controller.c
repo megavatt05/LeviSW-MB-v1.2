@@ -75,6 +75,18 @@ static int make_controller(call_controller_t *call, matrix_manager_t *matrix, fa
         return 1;
     }
 
+    /* Native fake-HW fixture only; it does not certify physical apartment wiring. */
+    matrix_manager_address_map_t test_map;
+    matrix_manager_address_map_make_sequential_candidate(&test_map);
+    test_map.verified = true;
+    (void)snprintf(test_map.pcb_revision, sizeof(test_map.pcb_revision), "%s", "TEST-PCB");
+    (void)snprintf(test_map.harness_revision, sizeof(test_map.harness_revision), "%s", "TEST-HARNESS");
+    (void)snprintf(test_map.commissioning_record, sizeof(test_map.commissioning_record),
+                   "%s", "CALL-CONTROLLER-NATIVE");
+    if (matrix_manager_set_address_map(matrix, &test_map) != MATRIX_MANAGER_OK) {
+        return 1;
+    }
+
     call_controller_default_config(config);
     config->number_capture_timeout_ms = 5000U;
     config->ring_timeout_ms = 60000U;
