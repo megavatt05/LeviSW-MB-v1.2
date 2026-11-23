@@ -107,7 +107,8 @@ void lu_decoder_poll(lu_decoder_t *decoder, int64_t now_us)
 
             if (!state->burst_active) {
                 state->burst_active = true;
-                state->burst_malformed = false;
+                state->burst_malformed = state->desynchronized;
+                state->desynchronized = false;
                 state->burst_edge_count = 1U;
             } else if (state->burst_edge_count < UINT16_MAX) {
                 state->burst_edge_count++;
@@ -162,9 +163,13 @@ void lu_decoder_feed(lu_decoder_t *decoder, const lu_decoder_edge_t *edge)
         }
     }
 
-    if (!state->pending && (edge->level == state->stable_level) && state->burst_active) {
-        /* A repeated sampled level inside a burst means at least one transition was lost. */
-        state->burst_malformed = true;
+    if (!state->pending && (edge->level == state->stable_level)) {
+        /* A repeated level means a transition was lost, even if it was the first edge. */
+        if (state->burst_active) {
+            state->burst_malformed = true;
+        } else {
+            state->desynchronized = true;
+        }
     }
 
     if (!state->pending && (edge->level != state->stable_level)) {
