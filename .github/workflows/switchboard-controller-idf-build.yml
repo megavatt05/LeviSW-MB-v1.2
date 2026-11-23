@@ -1,4 +1,4 @@
-name: ESP-IDF 6.0 — интегрированный контроллер коммутатора
+name: ESP-IDF 6.0 и автономные тесты — контроллер LeviSW-MB
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - "examples/17_tle94112_chaser_test/components/**"
       - "bsp/levisw-mb-v1.2/**"
       - "components/**"
+      - "tools/matrix_address_map/**"
       - ".github/workflows/switchboard-controller-idf-build.yml"
   pull_request:
     paths:
@@ -16,11 +17,12 @@ on:
       - "examples/17_tle94112_chaser_test/components/**"
       - "bsp/levisw-mb-v1.2/**"
       - "components/**"
+      - "tools/matrix_address_map/**"
       - ".github/workflows/switchboard-controller-idf-build.yml"
   workflow_dispatch:
 
 jobs:
-  build:
+  firmware-build:
     name: Сборка безопасной конфигурации для ESP32
     runs-on: ubuntu-latest
     steps:
@@ -35,3 +37,28 @@ jobs:
           esp_idf_version: release-v6.0
           target: esp32
           path: examples/19_switchboard_controller
+
+  native-tests:
+    name: Автономные тесты программных модулей
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Проверить Matrix Manager, FSM, Runtime и декодеры
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/native
+
+          for component in matrix_manager call_controller call_runtime handset_detector lu_decoder; do
+            echo "=== Native tests: $component ==="
+            cmake -S "components/$component/tests" -B "build/native/$component"
+            cmake --build "build/native/$component" --parallel
+            ctest --test-dir "build/native/$component" --output-on-failure
+          done
+
+      - name: Проверить генератор адресной карты
+        run: python3 -m unittest discover -s tools/matrix_address_map/tests -v
