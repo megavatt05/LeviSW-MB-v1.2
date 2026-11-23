@@ -5,7 +5,7 @@ Call Controller must be the only application-level client. No monitor, decoder,
 test loop, or UI task may write ADG1608, MC33879A, or TLE94112 directly while
 this manager is active.
 
-## Route model
+## Route model and address-map gate
 
 An apartment number is not converted to D/E coordinates by arithmetic at
 runtime. The manager requires an explicit versioned 80-entry board address map.
@@ -14,14 +14,16 @@ Each entry contains one D index (0..7) and one E index (0..9).
 The map validator requires:
 - format version 1;
 - all coordinates within D0..D7 and E0..E9;
-- no duplicate crosspoints;
-- exactly one use of every one of the 80 crosspoints.
+- no duplicate crosspoints and every crosspoint used exactly once;
+- null-terminated PCB revision, harness revision and commissioning-record fields;
+- for verified maps, all traceability fields must be non-empty.
 
 A sequential 1..80 map can be generated as a candidate for tests and simulation,
 but is always created with verified=false. Routing is rejected with
 MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED until an installed map is explicitly
-marked verified. The flag represents an engineering commissioning approval;
-it is not a live electrical self-test.
+marked verified. The flag represents a commissioning approval; it is not a
+live electrical self-test. matrix_manager_is_ready() is false until a verified
+map is installed.
 
 ## Board signal and test-point correspondence
 
@@ -60,34 +62,25 @@ HB2 / PO2 (OpenD) and HB12 / PO12 (SW-OUT12) are not ordinary E0..E9 lines.
 The schematic fragment confirms signal-to-test-point correspondence only. It
 does not identify the apartment-to-crosspoint wiring.
 
-## Commissioning gate
+## Commissioning procedure
 
-The physical apartment map must be derived from the actual panel harness and
-the current board revision, not inferred from the D/E test-point labels.
+Complete the [hardware matrix commissioning record](../../docs/hardware/LeviSW-MB-v1.2-matrix-commissioning.md)
+and its [80-apartment CSV template](../../docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv).
+The strict generator validates all apartment rows, connector pins, test points,
+continuity confirmations, independent review and board/harness revision metadata
+before generating a C header with verified=true.
 
-1. Keep all power rails disabled and EN-DE low. Disconnect the panel harness
-   before continuity measurements where necessary to avoid back-feeding.
-2. For each apartment contact, use a low-voltage continuity method to record
-   the corresponding D signal and E signal, then record their test points.
-3. Confirm every apartment maps to exactly one unique D/E crosspoint and that
-   all 80 crosspoints are used once. Investigate opens, shorts and duplicates.
-4. Have a second reviewer compare the completed table against the harness
-   drawing and board revision. Record instrument, date, board serial/revision,
-   operator and reviewer in the commissioning record.
-5. Only after review may the firmware map be set verified=true. Keep the
-   completed source table under version control. Never mark the synthetic
-   sequential candidate verified merely to make routing work.
-6. Powered verification is a separate step: use current-limited supplies,
-   initially no subscriber panel, and a scope/logic analyser to confirm D/E
-   levels, output polarity, EN-DE sequence, break-before-make and route settle.
+Keep all power rails disabled and EN-DE low during passive continuity checks.
+Disconnect external circuits that could back-feed test nodes. Powered checks are
+a separate step using current-limited supplies and measurement equipment.
+Do not mark the synthetic sequential map verified to make the application run.
 
 ### Known address discrepancy
 
 The software convention previously mapped flat 47 to D4 x E6, while the LED
 bench note calls a D0 x E6 test fixture "flat 47". This is unresolved. The map
-API now supports either coordinate assignment, but neither is approved by this
-document. Use the commissioning template and actual harness continuity results
-to determine the correct mapping before physical call routing.
+API supports either coordinate assignment, but neither is approved by this
+document. Resolve it from actual continuity evidence before physical call routing.
 
 ## Break-before-make sequence
 
@@ -124,4 +117,5 @@ on the real board with current-limited supplies before intercom use.
 cmake -S components/matrix_manager/tests -B build/matrix_manager_tests
 cmake --build build/matrix_manager_tests
 ctest --test-dir build/matrix_manager_tests --output-on-failure
+python3 -m unittest discover -s tools/matrix_address_map/tests -v
 \`\`\`
