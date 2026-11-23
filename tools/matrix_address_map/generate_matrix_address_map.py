@@ -8,8 +8,8 @@ import csv
 from datetime import date
 import json
 from pathlib import Path
+import re
 import sys
-from typing import Any
 
 REQUIRED_COLUMNS = (
     "apartment",
@@ -145,10 +145,12 @@ def load_and_validate(csv_path: Path) -> tuple[dict[str, str], list[tuple[int, i
     assert common is not None
     if common["operator"].casefold() == common["reviewer"].casefold():
         raise ValueError("reviewer must be a different person from operator")
+    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", common["verification_date"]) is None:
+        raise ValueError("verification_date must use ISO format YYYY-MM-DD")
     try:
         date.fromisoformat(common["verification_date"])
     except ValueError as exc:
-        raise ValueError("verification_date must use ISO format YYYY-MM-DD") from exc
+        raise ValueError("verification_date must be a valid calendar date") from exc
 
     ordered = [by_apartment[apartment] for apartment in range(1, 81)]
     return common, ordered
