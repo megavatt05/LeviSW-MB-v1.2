@@ -29,6 +29,20 @@ jobs:
       - name: Validate matrix address-map generator
         run: python3 -m unittest discover -s tools/matrix_address_map/tests -v
 
+      - name: Compile and validate generated C address map (synthetic fixture only)
+        run: |
+          mkdir -p build/address_map
+          python3 tools/matrix_address_map/generate_matrix_address_map.py \\
+            tools/matrix_address_map/tests/fixtures/synthetic_fixture_only.csv \\
+            build/address_map/levisw_mb_v1_2_apartment_map_generated.h
+          cc -std=c11 -Wall -Wextra -Werror \\
+            -Icomponents/matrix_manager/include \\
+            -Ibuild/address_map \\
+            tools/matrix_address_map/tests/test_generated_map.c \\
+            components/matrix_manager/matrix_manager.c \\
+            -o build/address_map/test_generated_map
+          build/address_map/test_generated_map
+
       - name: Test Matrix Manager
         run: |
           cmake -S components/matrix_manager/tests -B build/matrix_manager
