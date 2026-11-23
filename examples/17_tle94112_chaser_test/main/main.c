@@ -175,8 +175,21 @@ static void app_lu_event_monitor_task(void *pvParameters)
 
         const uint32_t dropped = levisw_bsp_lu_event_dropped_count();
         if (dropped != last_dropped) {
-            ESP_LOGW(TAG, "Очередь LU переполнена: потеряно событий=%" PRIu32, dropped);
+            ESP_LOGW(TAG, "Очередь LU переполнена: потеряно событий=%" PRIu32
+                          "; синхронизируем уровни по GPIO", dropped);
             last_dropped = dropped;
+
+            /* Восстанавливаем текущее состояние, если из-за переполнения потерян последний фронт. */
+            const bool current_levels[2] = {
+                levisw_bsp_lu1_read(),
+                levisw_bsp_lu2_read(),
+            };
+            const int64_t resync_us = esp_timer_get_time();
+            for (size_t i = 0; i < 2; i++) {
+                lines[i].candidate_level = current_levels[i];
+                lines[i].candidate_since_us = resync_us;
+                lines[i].pending = (current_levels[i] != lines[i].stable_level);
+            }
         }
     }
 }
