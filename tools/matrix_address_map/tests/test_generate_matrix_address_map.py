@@ -92,6 +92,24 @@ class MatrixAddressMapGeneratorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "different person"):
                 generator.load_and_validate(source)
 
+    def test_invalid_calendar_date_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "map.csv"
+            rows = sample_rows()
+            rows[0]["verification_date"] = "2026-02-30"
+            self.write_csv(source, rows)
+            with self.assertRaisesRegex(ValueError, "valid calendar date"):
+                generator.load_and_validate(source)
+
+    def test_non_iso_date_format_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "map.csv"
+            rows = sample_rows()
+            rows[0]["verification_date"] = "20261123"
+            self.write_csv(source, rows)
+            with self.assertRaisesRegex(ValueError, "ISO format"):
+                generator.load_and_validate(source)
+
     def test_missing_apartment_row_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "map.csv"
