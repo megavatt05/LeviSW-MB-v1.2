@@ -145,7 +145,7 @@ def load_and_validate(csv_path: Path) -> tuple[dict[str, str], list[tuple[int, i
     assert common is not None
     if common["operator"].casefold() == common["reviewer"].casefold():
         raise ValueError("reviewer must be a different person from operator")
-    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", common["verification_date"]) is None:
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", common["verification_date"]) is None:
         raise ValueError("verification_date must use ISO format YYYY-MM-DD")
     try:
         date.fromisoformat(common["verification_date"])
