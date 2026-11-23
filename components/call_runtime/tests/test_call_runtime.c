@@ -89,10 +89,14 @@ static int setup(call_runtime_t *runtime, matrix_manager_t *matrix, fake_hw_t *f
         return 1;
     }
 
-    /* Native fake-HW fixture only; it does not certify any physical flat wiring. */
+    /* Native fake-HW fixture only; this is not physical-board commissioning. */
     matrix_manager_address_map_t test_map;
     matrix_manager_address_map_make_sequential_candidate(&test_map);
     test_map.verified = true;
+    (void)snprintf(test_map.pcb_revision, sizeof(test_map.pcb_revision), "%s", "TEST-PCB");
+    (void)snprintf(test_map.harness_revision, sizeof(test_map.harness_revision), "%s", "TEST-HARNESS");
+    (void)snprintf(test_map.commissioning_record, sizeof(test_map.commissioning_record),
+                   "%s", "CALL-RUNTIME-NATIVE");
     if (matrix_manager_set_address_map(matrix, &test_map) != MATRIX_MANAGER_OK) {
         return 1;
     }
@@ -242,8 +246,6 @@ static int test_second_call_is_ignored_while_busy(void)
     CHECK(call_runtime_get_state(&runtime) == CALL_STATE_RINGING);
     const unsigned writes = fake.writes;
 
-    /* Input from the other LU line cannot change the active apartment route. */
-    /* Runtime re-baselines both lines at burst completion; send a truly newer edge. */
     now_us += 81200U;
     const lu_decoder_edge_t other_line = { LU_DECODER_LINE_2, true, now_us };
     CHECK(call_runtime_feed_lu_edge(&runtime, &other_line) == CALL_RUNTIME_OK);
