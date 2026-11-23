@@ -1,17 +1,14 @@
-# LeviSW-MB v1.2 — Matrix wiring commissioning record
+# LeviSW-MB v1.2 — протокол проверки разводки матрицы
 
-**Purpose:** establish the physical mapping from apartment number to one D output
-and one E output before any firmware is permitted to switch a subscriber line.
+**Цель:** определить фактическое соответствие номера квартиры одному выходу D и одному выходу E до того, как прошивке будет разрешено переключать абонентскую линию.
 
-**Status:** commissioning data not yet completed. This document does not certify
-the physical apartment map.
+**Статус:** данные ввода в эксплуатацию ещё не заполнены. Этот документ не подтверждает физическую адресную карту квартир.
 
-## 1. Evidence from the supplied schematic fragment
+## 1. Данные из предоставленного фрагмента схемы
 
-The attached schematic crop shows the board D/E output signals brought to
-individual test points in numerical order:
+На предоставленном фрагменте схемы сигналы выходов D/E платы выведены на отдельные контрольные точки в числовом порядке:
 
-| Signal | Test point | Signal | Test point |
+| Сигнал | Контрольная точка | Сигнал | Контрольная точка |
 |---|---:|---|---:|
 | D0 | TP27 | E0 | TP35 |
 | D1 | TP28 | E1 | TP36 |
@@ -24,13 +21,11 @@ individual test points in numerical order:
 | — | — | E8 | TP43 |
 | — | — | E9 | TP44 |
 
-The excerpt supports signal-to-test-point correspondence. It does **not** show
-the actual apartment harness mapping and must not be used as an apartment
-address table.
+Этот фрагмент подтверждает соответствие сигнала контрольной точке. Он **не показывает** фактическую разводку квартирного жгута и не должен использоваться как таблица адресов квартир.
 
-## 2. Driver-side signal mapping already represented in the BSP
+## 2. Соответствие сигналов выходам драйверов в BSP
 
-| Matrix line | Driver output | Driver channel | Test point |
+| Линия матрицы | Выход драйвера | Канал драйвера | Контрольная точка |
 |---|---|---|---:|
 | D0 | MC33879A OUT1 | D0 | TP27 |
 | D1 | MC33879A OUT2 | D1 | TP28 |
@@ -51,114 +46,75 @@ address table.
 | E8 | TLE94112 PO11 / HB11 | HB11 | TP43 |
 | E9 | TLE94112 PO8 / HB8 | HB8 | TP44 |
 
-TLE94112 HB2 / PO2 (OpenD) and HB12 / PO12 (SW-OUT12) are reserved and are not
-used as ordinary E0..E9 subscriber lines.
+TLE94112 HB2 / PO2 (OpenD) и HB12 / PO12 (SW-OUT12) зарезервированы и не используются как обычные абонентские линии E0..E9.
 
-The D output numbering and E-to-TLE mapping above are drawn from the checked-in
-board-support/bench source. Confirm them against the complete electrical
-drawing for the exact PCB revision before hardware release.
+Нумерация выходов D и соответствие E→TLE взяты из включённых в репозиторий исходников платы и стендовых материалов. Перед выпуском аппаратуры подтвердите их по полной электрической схеме конкретной ревизии печатной платы.
 
-## 3. Apartment map discrepancy — unresolved
+## 3. Противоречие в адресной карте квартир — не устранено
 
-Two incompatible pieces of historical software/bench information exist:
+Существуют две несовместимые исторические записи из ПО и стендовых материалов:
 
-- The old sequential software convention maps flat 47 to D4 x E6.
-- The LED bench record labels a D0 x E6 fixture as "flat 47".
+- старая последовательная программная схема связывает квартиру 47 с D4×E6;
+- в записи о LED-стенде комбинация D0×E6 обозначена как «квартира 47».
 
-The two must not be reconciled by guessing. The current firmware API therefore
-requires a complete, one-to-one 80-entry map and rejects all routes while the
-map is missing or marked unverified. The sequential map generator creates an
-unverified candidate only.
+Нельзя устранять это противоречие догадками. Поэтому текущий API прошивки требует полную адресную карту из 80 уникальных записей и отклоняет все маршруты, если карта отсутствует или не отмечена как проверенная. Генератор последовательной карты создаёт только непроверенный шаблон.
 
-## 4. Passive continuity commissioning procedure
+## 4. Пассивная проверка целостности цепей
 
-Perform this with the board and subscriber panel unpowered. Disconnect external
-equipment that could back-feed the test nodes. Do not probe a powered output
-with an ohmmeter.
+Выполняйте проверку при полностью обесточенных плате и абонентской панели. Отсоедините внешнее оборудование, которое может подать обратное питание на контрольные точки. Не измеряйте сопротивление на выходе, находящемся под напряжением.
 
-1. Record PCB assembly/revision, board serial number, harness drawing/revision,
-   panel revision, date, operator and reviewer.
-2. Verify each D signal at TP27..TP34 against the corresponding D harness pin.
-3. Verify each E signal at TP35..TP44 against the corresponding E harness pin.
-4. For every apartment 1..80, record exactly one D coordinate and one E
-   coordinate from the actual panel harness. Record both corresponding test
-   points and connector/pin identifiers from the full drawing.
-5. Check for opens, shorts, unintended cross-connections and duplicate
-   apartment crosspoints.
-6. Confirm the resulting map uses each of the 80 D/E coordinate pairs exactly
-   once. Review exceptions against the actual circuit drawing, not the software
-   sequential convention.
-7. Have a second engineer independently verify the full table and sign it.
-8. Enter the approved table into the board application map. Only then may the
-   map's verified flag be set true.
+1. Запишите номер и ревизию сборки печатной платы, серийный номер платы, ревизию чертежа жгута, ревизию панели, дату, исполнителя и независимого проверяющего.
+2. Проверьте каждый сигнал D на TP27..TP34 относительно соответствующего контакта жгута D.
+3. Проверьте каждый сигнал E на TP35..TP44 относительно соответствующего контакта жгута E.
+4. Для каждой квартиры 1..80 запишите ровно одну координату D и одну координату E, измеренные на фактическом жгуте панели. Укажите обе контрольные точки и номера контактов разъёмов по полной схеме.
+5. Проверьте отсутствие обрывов, коротких замыканий, непредусмотренных соединений и повторяющихся точек коммутации квартир.
+6. Убедитесь, что итоговая карта использует каждую из 80 пар координат D/E ровно один раз. Все исключения сверяйте с фактической электрической схемой, а не с последовательной программной нумерацией.
+7. Попросите второго инженера независимо проверить всю таблицу и подписать её.
+8. Внесите утверждённую таблицу в адресную карту приложения платы. Только после этого разрешается установить флаг карты `verified=true`.
 
-Use [LeviSW-MB-v1.2-apartment-map-template.csv](LeviSW-MB-v1.2-apartment-map-template.csv)
-as the editable 80-row record. All mapping cells are deliberately blank.
+Используйте [CSV-шаблон адресной карты для LeviSW-MB v1.2](LeviSW-MB-v1.2-apartment-map-template.csv) как редактируемую таблицу из 80 строк. Все поля координат намеренно оставлены пустыми.
 
+## 5. Строгая генерация адресной карты по протоколу проверки
 
-## 4. Strict map generation from the commissioning record
+Заполните все 80 строк в файле [LeviSW-MB-v1.2-apartment-map-template.csv](LeviSW-MB-v1.2-apartment-map-template.csv). Для каждой квартиры внесите координаты D/E, измеренные на фактически обесточенном жгуте, соответствующую контрольную точку и физические контакты разъёмов. Подтвердите целостность цепей и внесите одинаковые контролируемые данные о проверке в каждую строку: исполнитель, независимый проверяющий, дата в формате ISO, ревизия печатной платы, ревизия жгута и идентификатор протокола проверки.
 
-Complete all 80 rows in
-[LeviSW-MB-v1.2-apartment-map-template.csv](LeviSW-MB-v1.2-apartment-map-template.csv).
-For each apartment, enter the D/E coordinate measured on the actual unpowered
-harness, the corresponding test point and physical connector pins. Confirm
-continuity and enter the same controlled commissioning metadata on every row:
-operator, independent reviewer, ISO date, PCB revision, harness revision and
-commissioning record ID.
+Запустите генератор из корня репозитория:
 
-Generate the board map from the repository root:
-
-\`\`\`sh
-python3 tools/matrix_address_map/generate_matrix_address_map.py \\
-  docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv \\
+```sh
+python3 tools/matrix_address_map/generate_matrix_address_map.py \
+  docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv \
   bsp/levisw-mb-v1.2/include/levisw_mb_v1_2_apartment_map_generated.h
-\`\`\`
+```
 
-The generator rejects incomplete rows, incorrect D/E test-point numbers,
-duplicate coordinates, missing continuity confirmations, inconsistent
-commissioning metadata, missing connector pin references, invalid dates, or
-the same person acting as operator and reviewer. Only a successful validation
-produces a C map with verified=true and traceability metadata. The generated
-header is an engineering-controlled artifact: review it, commit it, and include
-the commissioning record in the hardware release package.
+Генератор отклоняет неполные строки, неверные номера контрольных точек D/E, повторяющиеся координаты, отсутствие подтверждения целостности цепей, несогласованные данные проверки, отсутствующие номера контактов разъёмов, неверные даты и совпадение исполнителя с независимым проверяющим. Только успешная проверка создаёт C-заголовок с `verified=true` и метаданными прослеживаемости. Сгенерированный заголовок является контролируемым инженерным артефактом: проверьте его, добавьте в Git и включите протокол проверки в комплект документации выпуска платы.
 
-A successful script run validates the entered record's consistency; it does
-not itself perform a continuity measurement or prove that the CSV entries are
-true. Never use sample/test data or a sequential candidate for a physical
-board. Firmware routing remains fail-closed until the approved generated map
-is installed.
+Успешный запуск скрипта проверяет согласованность внесённых данных; он не измеряет целостность цепей и не доказывает, что значения CSV соответствуют реальной проводке. Не используйте демонстрационные данные или последовательный шаблон для физической платы. Маршрутизация прошивки должна оставаться заблокированной, пока не будет установлена утверждённая сгенерированная карта.
 
-## 5. Powered output verification — separate approval
+## 6. Проверка выходов под напряжением — отдельное разрешение
 
-After passive continuity checks and map review, test the driver stages without
-the subscriber panel first:
+После пассивной проверки целостности цепей и утверждения адресной карты сначала проверьте каскады драйверов без подключённой абонентской панели:
 
-- use current-limited supplies and the board's approved rail settings;
-- keep all crosspoints open during startup and check safe-off state;
-- verify MC33879A D output levels at TP27..TP34;
-- verify TLE94112 E output levels at TP35..TP44;
-- verify active polarity and OFF/FLOATING behaviour for every E line;
-- scope EN-DE, ADG1608 enable and D/E transitions;
-- measure break-before-make, driver wake-up and route settling on the real
-  assembly; replace provisional firmware timings with reviewed measurements;
-- test one isolated dummy load / LED fixture at a time before connecting a
-  subscriber panel.
+- используйте источники питания с ограничением тока и утверждённые для платы настройки питающих шин;
+- во время запуска оставляйте все точки коммутации разомкнутыми и проверяйте безопасное состояние выходов;
+- проверьте уровни выходов D микросхемы MC33879A на TP27..TP34;
+- проверьте уровни выходов E микросхемы TLE94112 на TP35..TP44;
+- проверьте активную полярность и поведение OFF/FLOATING каждой линии E;
+- осциллографом проверьте EN-DE, разрешение ADG1608 и переходы D/E;
+- измерьте на реальной сборке интервалы Break-Before-Make, пробуждение драйверов и стабилизацию маршрута; замените предварительные программные задержки измеренными и согласованными значениями;
+- перед подключением абонентской панели проверяйте по одной изолированной макетной нагрузке или LED-оснастке.
 
-Never infer subscriber loop current from DD6: it monitors the +V2 supply rail,
-not the individual apartment loop.
+Не выводите ток абонентского шлейфа из показаний DD6: этот измеритель контролирует шину питания +V2, а не отдельную абонентскую линию.
 
-## 6. Firmware release conditions
+## 7. Условия выпуска прошивки
 
-A physical-call firmware build is not approved until all of the following are
-stored with the release:
+Сборка прошивки для физических вызовов не утверждается, пока вместе с выпуском не сохранены все следующие материалы:
 
-- completed 80-entry apartment map and its revision;
-- passive continuity record and independent review;
-- powered test report, scope captures and current-limited supply settings;
-- verified Off-Hook/On-Hook polarity on LU1 and LU2 during idle, ringing and call;
-- verified E output polarity for the intended intercom operating mode;
-- verified break-before-make, wake-up and route-settle times;
-- documented safe-off behaviour for every SPI, telemetry and queue-loss fault.
+- заполненная адресная карта из 80 записей и её ревизия;
+- протокол пассивной проверки целостности цепей и независимая проверка;
+- отчёт о проверках под напряжением, осциллограммы и настройки источников питания с ограничением тока;
+- подтверждённая полярность Off-Hook/On-Hook на LU1 и LU2 в дежурном режиме, во время звонка и разговора;
+- подтверждённая полярность выхода E для предполагаемого режима работы домофона;
+- проверенные интервалы Break-Before-Make, пробуждения и стабилизации маршрута;
+- документированное поведение безопасного отключения при каждой ошибке SPI, телеметрии и потере событий очереди.
 
-Do not remove the address-map runtime gate to work around missing commissioning
-data. A simulation-only map in Example 18 is not a physical approval.
+Не удаляйте проверку адресной карты во время выполнения, чтобы обойти отсутствие данных ввода в эксплуатацию. Карта, используемая только в программной симуляции Example 18, не является разрешением для физической платы.

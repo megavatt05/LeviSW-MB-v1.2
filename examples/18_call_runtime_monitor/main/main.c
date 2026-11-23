@@ -125,7 +125,7 @@ static void runtime_task(void *arg)
             ESP_LOGE(TAG, "Decoder queue error: %s", esp_err_to_name(err));
         }
 
-        /* Drain timestamped edges before polling the decoder burst timeout. */
+        /* Сначала обработать все фронты с временными метками, затем проверить тайм-аут пакета декодера. */
         while (err == ESP_OK) {
             const lu_decoder_edge_t edge = {
                 .line = (event.line == LEVISW_LU_LINE_1)

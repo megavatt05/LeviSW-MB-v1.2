@@ -75,7 +75,7 @@ static int make_controller(call_controller_t *call, matrix_manager_t *matrix, fa
         return 1;
     }
 
-    /* Native fake-HW fixture only; it does not certify physical apartment wiring. */
+    /* Только автономный тест с имитацией оборудования; он не подтверждает физическую разводку квартир. */
     matrix_manager_address_map_t test_map;
     matrix_manager_address_map_make_sequential_candidate(&test_map);
     test_map.verified = true;
@@ -212,7 +212,7 @@ static int test_ring_timeout_is_not_extended_by_pickup_rejections(void)
     CHECK(send_event(&call, CALL_EVENT_PICKUP_REJECTED, 0U, false, 20100U) == CALL_CONTROLLER_OK);
     CHECK(call_controller_get_state(&call) == CALL_STATE_RINGING);
 
-    /* Ring timeout is measured from first entry to RINGING, not last pickup retry. */
+    /* Тайм-аут звонка отсчитывается от первого входа в RINGING, а не от последней повторной попытки подтвердить снятие трубки. */
     CHECK(call_controller_tick(&call, 60010U) == CALL_CONTROLLER_OK);
     CHECK(call_controller_get_state(&call) == CALL_STATE_STANDBY);
     CHECK(matrix_manager_get_state(&matrix) == MATRIX_MANAGER_STATE_OPEN);

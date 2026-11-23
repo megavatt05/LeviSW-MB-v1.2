@@ -220,7 +220,7 @@ call_controller_status_t call_controller_tick(call_controller_t *controller,
     if ((controller->state == CALL_STATE_ANSWER_VERIFY) &&
         (controller->config.answer_verify_timeout_ms != 0U) &&
         (elapsed >= controller->config.answer_verify_timeout_ms)) {
-        /* A pickup that was not confirmed is not TALKING; keep the route in RINGING. */
+        /* Неподтверждённое снятие трубки не переводит вызов в TALKING; соединение остаётся в RINGING. */
         change_state(controller, CALL_STATE_RINGING, now_ms);
     }
 

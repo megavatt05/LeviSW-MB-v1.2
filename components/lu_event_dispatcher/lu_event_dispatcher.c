@@ -70,7 +70,7 @@ static void dispatcher_task(void *arg)
 
         atomic_fetch_add_explicit(&dispatcher->received, 1U, memory_order_relaxed);
 
-        /* Preserve every raw transition independently for the decoder and the UI/logger. */
+        /* Независимо передать каждый необработанный переход декодеру и интерфейсу/журналу. */
         if (xQueueSend(dispatcher->decoder_queue, &event, 0U) != pdTRUE) {
             atomic_fetch_add_explicit(&dispatcher->decoder_dropped, 1U, memory_order_relaxed);
         }
@@ -79,7 +79,7 @@ static void dispatcher_task(void *arg)
         }
     }
 
-    /* Signal completion before self-deletion; the owner frees context only after this. */
+    /* Сообщить о завершении до самостоятельного удаления задачи; владелец освобождает контекст только после этого. */
     (void)xSemaphoreGive(dispatcher->stopped);
     vTaskDelete(NULL);
 }

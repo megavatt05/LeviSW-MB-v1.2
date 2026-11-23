@@ -14,7 +14,7 @@
 
 static const char *TAG = "tle94112_example";
 
-// Pin configuration
+// Конфигурация выводов
 #define TLE_SPI_HOST   SPI2_HOST
 #define TLE_GPIO_MOSI  7
 #define TLE_GPIO_MISO  9
@@ -27,7 +27,7 @@ static const char *TAG = "tle94112_example";
 #define RANDOM_TOGGLE_DELAY_MS     800
 #define RANDOM_STEPS_COUNT         20
 
-// Global driver handle
+// Глобальный дескриптор драйвера
 static tle94112_handle_t s_tle_handle = NULL;
 
 static void sweep_single_port_states(void)
@@ -36,14 +36,14 @@ static void sweep_single_port_states(void)
     ESP_LOGI(TAG, "[TLE_SWEEP] Sequence: UP -> DOWN -> FLOATING");
 
     for (int hb = TLE_HB1; hb <= TLE_HB12; ++hb) {
-        // Set all to FLOATING
+        // Перевести все полумосты в FLOATING
         esp_err_t ret = tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "[TLE_SWEEP] Failed to set FLOATING: %s", esp_err_to_name(ret));
             continue;
         }
 
-        // HS_ON
+        // Включить HIGH_SIDE
         ESP_LOGI(TAG, "[TLE_SWEEP] HB%d -> UP", hb + 1);
         ret = tle94112_set_hb_state(s_tle_handle, (tle_hb_idx_t)hb, TLE_HB_HS_ON);
         if (ret != ESP_OK) {
@@ -52,7 +52,7 @@ static void sweep_single_port_states(void)
         }
         vTaskDelay(pdMS_TO_TICKS(SWEEP_STATE_DELAY_MS));
 
-        // LS_ON
+        // Включить LOW_SIDE
         ESP_LOGI(TAG, "[TLE_SWEEP] HB%d -> DOWN", hb + 1);
         ret = tle94112_set_hb_state(s_tle_handle, (tle_hb_idx_t)hb, TLE_HB_LS_ON);
         if (ret != ESP_OK) {
@@ -61,7 +61,7 @@ static void sweep_single_port_states(void)
         }
         vTaskDelay(pdMS_TO_TICKS(SWEEP_STATE_DELAY_MS));
 
-        // FLOATING
+        // Перевести выходы в FLOATING
         ESP_LOGI(TAG, "[TLE_SWEEP] HB%d -> FLOATING", hb + 1);
         ret = tle94112_set_hb_state(s_tle_handle, (tle_hb_idx_t)hb, TLE_HB_FLOATING);
         if (ret != ESP_OK) {
@@ -101,7 +101,7 @@ static void tle94112_example_task(void *arg)
 
     ESP_LOGI(TAG, "[TLE_BOOT] PROGRAM: TLE94112_DIAG_DEMO");
 
-    // 1. Initialize SPI bus
+    // 1. Инициализация шины SPI
     spi_bus_config_t buscfg = {
         .mosi_io_num = TLE_GPIO_MOSI,
         .miso_io_num = TLE_GPIO_MISO,
@@ -117,15 +117,15 @@ static void tle94112_example_task(void *arg)
         return;
     }
 
-    // 2. Configure TLE94112
+    // 2. Настройка TLE94112
     tle94112_config_t cfg = {
         .spi_host = TLE_SPI_HOST,
         .gpio_cs = TLE_GPIO_CS,
         .gpio_en = TLE_GPIO_EN,
-        .spi_freq_hz = 1000000  // 1 MHz
+        .spi_freq_hz = 1000000  // 1 МГц
     };
 
-    // 3. Initialize driver
+    // 3. Инициализация драйвера
     ESP_LOGI(TAG, "[TLE_BOOT] Init TLE94112");
     s_tle_handle = tle94112_init(&cfg);
     if (!s_tle_handle) {
@@ -137,32 +137,32 @@ static void tle94112_example_task(void *arg)
 
     ESP_LOGI(TAG, "[TLE_BOOT] TLE94112 initialized successfully");
 
-    // 4. Clear errors after init
+    // 4. Очистка ошибок после инициализации
     ret = tle94112_clear_errors(s_tle_handle);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to clear initial errors");
     }
 
-    // 5. Run diagnostics
+    // 5. Запуск диагностики
     tle94112_diagnose(s_tle_handle);
 
     ESP_LOGI(TAG, "[TLE_BOOT] Wait %d ms", START_DELAY_MS);
     vTaskDelay(pdMS_TO_TICKS(START_DELAY_MS));
 
-    // 6. Run examples
+    // 6. Выполнение примеров
     sweep_single_port_states();
     random_music_mode();
 
-    // 7. Set all to FLOATING
+    // 7. Перевод всех полумостов в FLOATING
     ret = tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "[TLE_DONE] Failed to set FLOATING: %s", esp_err_to_name(ret));
     }
 
-    // 8. Final diagnostics
+    // 8. Итоговая диагностика
     tle94112_diagnose(s_tle_handle);
 
-    // 9. Clear errors
+    // 9. Очистка ошибок
     ret = tle94112_clear_errors(s_tle_handle);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "[TLE_DONE] Failed to clear errors: %s", esp_err_to_name(ret));
@@ -170,14 +170,14 @@ static void tle94112_example_task(void *arg)
 
     ESP_LOGI(TAG, "[TLE_DONE] Demo finished, entering idle loop");
 
-    // 10. Idle loop with periodic diagnostics
+    // 10. Цикл ожидания с периодической диагностикой
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(30000));  // 30 seconds
+        vTaskDelay(pdMS_TO_TICKS(30000));  // 30 секунд
 
-        // Periodic diagnostics
+        // Периодическая диагностика
         tle94112_diagnose(s_tle_handle);
 
-        // Clear errors if any
+        // Очистить ошибки, если они есть
         tle94112_clear_errors(s_tle_handle);
     }
 }

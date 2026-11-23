@@ -64,31 +64,31 @@ typedef struct {
 } lu_decoder_t;
 
 /*
- * Historical bench notes suggest 120 us glitch rejection, an 80 ms burst
- * terminator, and two accepted transitions per apartment count. These values
- * are defaults for offline evaluation only; confirm them on the real panel
- * with a scope/logic analyser before connecting intercom lines.
+ * Исторические стендовые заметки указывают на фильтрацию помех длительностью 120 мкс, завершение пакета через 80 мс
+ * без подтверждённого фронта и два принятых перехода на номер квартиры. Эти значения
+ * являются только начальными параметрами для автономной проверки; подтвердите их на реальной панели
+ * осциллографом или логическим анализатором до подключения линий домофона.
  */
 void lu_decoder_default_config(lu_decoder_config_t *config);
 bool lu_decoder_init(lu_decoder_t *decoder, const lu_decoder_config_t *config);
 
-/* Seed the idle level before events are consumed. Events at/before this time are stale. */
+/* Задать исходный уровень покоя до обработки событий. События с меткой времени не позже этого момента считаются устаревшими. */
 bool lu_decoder_set_line_level(lu_decoder_t *decoder,
                                lu_decoder_line_t line,
                                bool level,
                                int64_t timestamp_us);
 
-/* Feed raw GPIO-independent edges; filtering and burst accounting happen here. */
+/* Передать необработанные фронты, не зависящие от GPIO; фильтрация и учёт пакетов выполняются внутри декодера. */
 void lu_decoder_feed(lu_decoder_t *decoder, const lu_decoder_edge_t *edge);
 
-/* Advance time when no new edge arrives; may complete one or both bursts. */
+/* Продвинуть внутреннее время при отсутствии новых фронтов; это может завершить один или оба пакета. */
 void lu_decoder_poll(lu_decoder_t *decoder, int64_t now_us);
 
-/* Pop completed/invalid bursts in FIFO order. */
+/* Извлечь завершённые или некорректные пакеты в порядке FIFO. */
 bool lu_decoder_result_pop(lu_decoder_t *decoder, lu_decoder_result_t *result);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* LU_DECODER_H */
+#endif /* Защита от повторного включения заголовочного файла. */

@@ -89,7 +89,7 @@ static int setup(call_runtime_t *runtime, matrix_manager_t *matrix, fake_hw_t *f
         return 1;
     }
 
-    /* Native fake-HW fixture only; this is not physical-board commissioning. */
+    /* Только автономный тест с имитацией оборудования; это не ввод физической платы в эксплуатацию. */
     matrix_manager_address_map_t test_map;
     matrix_manager_address_map_make_sequential_candidate(&test_map);
     test_map.verified = true;

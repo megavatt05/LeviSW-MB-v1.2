@@ -9,9 +9,9 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
-      // Copies src/assets into dist/ so root-relative URLs like
-      // "/src/assets/images/..." (e.g. generate_image output) still resolve
-      // in production builds. Do not remove.
+      // Копирует src/assets в dist/, чтобы корневые относительные URL-адреса, такие как
+      // "/src/assets/images/..." (например, результат generate_image), продолжали открываться
+      // в production-сборке. Не удалять.
       {
         name: 'copy-unbundled-src-assets',
         apply: 'build',
@@ -34,10 +34,10 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      // HMR отключается в AI Studio с помощью переменной окружения DISABLE_HMR.
+      // Не изменять: наблюдение за файлами отключается, чтобы избежать мерцания во время правок агентом.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
+      // Отключать наблюдение за файлами при DISABLE_HMR=true, чтобы снизить нагрузку на процессор во время правок агентом.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };

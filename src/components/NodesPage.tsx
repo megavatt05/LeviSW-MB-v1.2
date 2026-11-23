@@ -78,7 +78,7 @@ const STRUCTURAL_GROUPS: Array<{
 
 function getQuickSheets(pages: number[]): number[] {
   if (pages.length <= 4) return pages;
-  // For node 16 covering sheets 13..23, highlight the key reference pages
+  // Для узла 16, охватывающего листы 13..23, выделить основные справочные листы
   return [13, 14, 17, 21];
 }
 

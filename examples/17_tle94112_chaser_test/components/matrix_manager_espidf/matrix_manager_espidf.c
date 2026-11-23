@@ -28,8 +28,8 @@ static matrix_manager_status_t adapter_set_d_mask(void *context, uint8_t mask)
 
     uint8_t faults = 0U;
     /*
-     * The RX word of this SPI transaction describes the previous frame.
-     * Ignore it; issue a separate readback frame and validate that response.
+     * Слово RX этой транзакции SPI описывает предыдущий кадр.
+     * Игнорировать его; отправить отдельный кадр чтения и проверить полученный ответ.
      */
     esp_err_t err = mc33879a_set_outputs(adapter->mc, mask, NULL);
     if (err != ESP_OK) {
@@ -37,8 +37,8 @@ static matrix_manager_status_t adapter_set_d_mask(void *context, uint8_t mask)
     }
 
     /*
-     * MC33879A returns diagnostics for the previous SPI frame. This second
-     * command's RX data now describes the just-applied output mask.
+     * MC33879A возвращает диагностические данные для предыдущего кадра SPI. Поэтому данные RX второй
+     * команды уже описывают только что применённую маску выходов.
      */
     err = mc33879a_read_faults(adapter->mc, &faults);
     if ((err != ESP_OK) || (faults != 0U)) {
@@ -84,7 +84,7 @@ static matrix_manager_status_t adapter_set_unit(void *context,
         return MATRIX_MANAGER_ERR_INVALID_ARG;
     }
 
-    /* BSP mapping is non-linear: E0..E9 -> PO1,PO5,PO7,PO9,PO6,PO4,PO3,PO10,PO11,PO8. */
+    /* Соответствие в BSP нелинейное: E0..E9 -> PO1,PO5,PO7,PO9,PO6,PO4,PO3,PO10,PO11,PO8. */
     const uint8_t half_bridge = levisw_bsp_unit_to_tle_hb(unit);
     if ((half_bridge == 0U) || (half_bridge > 12U) ||
         (half_bridge == 2U) || (half_bridge == 12U)) {

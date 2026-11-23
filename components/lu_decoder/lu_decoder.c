@@ -116,7 +116,7 @@ void lu_decoder_poll(lu_decoder_t *decoder, int64_t now_us)
             state->last_valid_edge_us = state->pending_since_us;
         }
 
-        /* Do not terminate a burst while a possible edge is still being qualified. */
+        /* Не завершать пакет, пока возможный фронт ещё проходит проверку длительности. */
         if (state->burst_active && !state->pending &&
             (now_us >= state->last_valid_edge_us) &&
             ((uint64_t)(now_us - state->last_valid_edge_us) >= decoder->config.burst_gap_us)) {
@@ -144,27 +144,27 @@ void lu_decoder_feed(lu_decoder_t *decoder, const lu_decoder_edge_t *edge)
         return;
     }
 
-    /* First close any burst whose quiet gap ended before this new edge. */
+    /* Сначала закрыть пакет, пауза в котором завершилась до появления нового фронта. */
     lu_decoder_poll(decoder, edge->timestamp_us);
     state->last_input_timestamp_us = edge->timestamp_us;
 
     if (state->pending) {
         if (edge->level == state->pending_level) {
-            return; /* duplicate sample of the candidate level */
+            return; /* Повторная выборка проверяемого уровня. */
         }
         if (edge->level == state->stable_level) {
-            /* A return to the old state before the filter expires is a short glitch. */
+            /* Возврат к предыдущему уровню до окончания фильтрации считается короткой помехой. */
             if ((uint64_t)(edge->timestamp_us - state->pending_since_us) <
                 decoder->config.glitch_filter_us) {
                 state->pending = false;
                 return;
             }
-            /* Otherwise poll() above has already committed the previous candidate. */
+            /* В противном случае предыдущий кандидат уже подтверждён вызовом poll() выше. */
         }
     }
 
     if (!state->pending && (edge->level == state->stable_level)) {
-        /* A repeated level means a transition was lost, even if it was the first edge. */
+        /* Повторяющийся уровень означает потерю перехода, даже если это был первый фронт. */
         if (state->burst_active) {
             state->burst_malformed = true;
         } else {

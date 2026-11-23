@@ -1,10 +1,10 @@
-# 📋 ESPUMAN Project State (Feb 12, 2026)
+# 📋 Состояние проекта ESPUMAN (12 февраля 2026 г.)
 
 ## ✅ Статус: УСПЕШНО СОБРАН И РАБОТАЕТ
 
-**Binary:** `build/ESPUMAN.bin` (238.3 KB)  
-**Last Build:** ✓ PASS (0 errors, 1 warning)  
-**Last Flash:** ✓ COM7 (UART)
+**Бинарный файл:** `build/ESPUMAN.bin` (238.3 KB)  
+**Последняя сборка:** ✓ УСПЕШНО (0 ошибок, 1 предупреждение)  
+**Последняя прошивка:** ✓ COM7 (UART)
 
 ---
 
@@ -30,8 +30,8 @@
 |---|---|---|---|---|
 | **TLE94112** | H-Bridge Driver (12 вых) | - | ✓ | `components/tle94112/` + `main/main.c` |
 | **MCP4532** | Digital Pot. (2 шт) | 0x2C, 0x2D | - | `main/mcp4532.c(.h)` |
-| **TCA95x5** | GPIO Expander | 0x20 | - | `components/tca95x5/` |
-| **MC33879A** | High-Side Driver | - | ✓ | `components/mc33879a/` |
+| **TCA95x5** | Расширитель GPIO | 0x20 | - | `components/tca95x5/` |
+| **MC33879A** | Драйвер верхних ключей (High-Side) | - | ✓ | `components/mc33879a/` |
 
 ---
 
@@ -128,7 +128,7 @@ idf.py -p COM7 flash
 # Мониторинг
 idf.py monitor
 
-# Build + Flash одновременно
+# Сборка + Flash одновременно
 idf.py -p COM7 build flash monitor
 ```
 

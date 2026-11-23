@@ -44,12 +44,12 @@ typedef struct {
 } matrix_manager_coordinate_t;
 
 /*
- * Board-specific apartment map.
+ * Адресная карта квартир для конкретной платы.
  *
- * verified is a commissioning approval flag, not an automatic hardware
- * measurement. A verified map must identify the PCB revision, harness
- * revision and a controlled commissioning record. The record should include
- * continuity evidence and independent review.
+ * Флаг verified обозначает утверждение после ввода в эксплуатацию, а не автоматическое аппаратное
+ * измерение. В утверждённой карте должны быть указаны ревизия печатной платы, ревизия жгута
+ * и контролируемый протокол проверки. Протокол должен включать
+ * результаты проверки целостности цепей и независимую проверку.
  */
 typedef struct {
     uint8_t version;
@@ -61,14 +61,14 @@ typedef struct {
 } matrix_manager_address_map_t;
 
 /*
- * Build the conventional sequential numbering as an UNVERIFIED candidate.
- * It is useful for unit tests and simulation; it must not be enabled on a
- * physical panel without a completed continuity/commissioning record.
+ * Сформировать стандартную последовательную нумерацию как НЕПРОВЕРЕННЫЙ шаблон.
+ * Он пригоден для модульных тестов и симуляции; его нельзя использовать на
+ * физической панели без заполненного протокола проверки целостности цепей и ввода в эксплуатацию.
  */
 void matrix_manager_address_map_make_sequential_candidate(
     matrix_manager_address_map_t *map);
 
-/* Validate format, identity metadata, D/E ranges, and unique crosspoints. */
+/* Проверить формат, идентификационные метаданные, диапазоны D/E и уникальность точек коммутации. */
 bool matrix_manager_address_map_validate(const matrix_manager_address_map_t *map);
 
 typedef struct {
@@ -82,10 +82,10 @@ typedef struct {
 } matrix_manager_hw_ops_t;
 
 typedef struct {
-    uint32_t break_before_make_us; /* Provisional initial value; scope-verify. */
-    uint32_t driver_wakeup_us;      /* Board report uses 15 ms after EN-DE rises. */
-    uint32_t route_settle_us;       /* Provisional initial value; scope-verify. */
-    matrix_unit_drive_t active_unit_drive; /* Must be chosen explicitly by the board profile. */
+    uint32_t break_before_make_us; /* Предварительное начальное значение; проверить осциллографом. */
+    uint32_t driver_wakeup_us;      /* В отчёте по плате указана задержка 15 мс после перехода EN-DE в HIGH. */
+    uint32_t route_settle_us;       /* Предварительное начальное значение; проверить осциллографом. */
+    matrix_unit_drive_t active_unit_drive; /* Должно быть явно задано в аппаратном профиле платы. */
 } matrix_manager_config_t;
 
 typedef struct {
@@ -101,17 +101,17 @@ typedef struct {
 
 void matrix_manager_default_config(matrix_manager_config_t *config);
 
-/* Initializes the manager and attempts to leave every matrix output safely open. */
+/* Инициализировать менеджер и попытаться безопасно разомкнуть все выходы матрицы. */
 matrix_manager_status_t matrix_manager_init(matrix_manager_t *manager,
                                              const matrix_manager_hw_ops_t *hw,
                                              const matrix_manager_config_t *config);
 
-/* Install a validated board map while OPEN. Unverified maps cannot be routed. */
+/* Установить проверенную карту платы, пока матрица находится в OPEN. По непроверенной карте маршрутизация запрещена. */
 matrix_manager_status_t matrix_manager_set_address_map(
     matrix_manager_t *manager,
     const matrix_manager_address_map_t *map);
 
-/* Route one apartment (1..80). Requires a verified map with traceability metadata. */
+/* Подключить маршрут одной квартиры (1..80). Требуется проверенная карта с метаданными прослеживаемости. */
 matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
                                                 uint8_t apartment);
 
@@ -121,11 +121,11 @@ matrix_manager_status_t matrix_manager_recover(matrix_manager_t *manager);
 
 matrix_manager_state_t matrix_manager_get_state(const matrix_manager_t *manager);
 uint8_t matrix_manager_get_active_apartment(const matrix_manager_t *manager);
-/* True only when the matrix is open/connected AND a verified address map is loaded. */
+/* Возвращает true, только если матрица разомкнута/подключена И загружена проверенная адресная карта. */
 bool matrix_manager_is_ready(const matrix_manager_t *manager);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MATRIX_MANAGER_H */
+#endif /* Защита от повторного включения заголовочного файла. */

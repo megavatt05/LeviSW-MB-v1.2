@@ -103,7 +103,7 @@ static call_runtime_status_t process_decoder_results(call_runtime_t *runtime,
         runtime->active_line = result.line;
         runtime->active_line_valid = true;
 
-        /* Arm only after route connection; require a new Off-Hook edge. */
+        /* Активировать детектор только после подключения маршрута; требуется новый фронт Off-Hook. */
         if (!handset_detector_arm(&runtime->handset,
                                   (result.line == LU_DECODER_LINE_1)
                                       ? HANDSET_LINE_1 : HANDSET_LINE_2,
@@ -115,7 +115,7 @@ static call_runtime_status_t process_decoder_results(call_runtime_t *runtime,
             return CALL_RUNTIME_ERR_FAULT;
         }
 
-        /* Drop pulse-train remnants; ringing/pickup edges belong to the detector. */
+        /* Отбросить остаточные импульсы пакета; фронты звонка и снятия трубки обрабатывает детектор. */
         reset_decoder_baseline(runtime, completed_us);
     }
 
@@ -240,7 +240,7 @@ call_runtime_status_t call_runtime_feed_lu_edge(call_runtime_t *runtime,
         return process_handset_event(runtime, event, edge->timestamp_us);
     }
 
-    /* While a call is active, other line transitions are diagnostic only. */
+    /* Во время активного вызова переходы на другой линии используются только для диагностики. */
     return CALL_RUNTIME_OK;
 }
 

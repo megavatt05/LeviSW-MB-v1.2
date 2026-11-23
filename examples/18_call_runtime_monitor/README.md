@@ -1,49 +1,34 @@
-# Example 18 — Call Runtime software integration monitor
+# Пример 18 — программный монитор интеграции Call Runtime
 
-This target integrates:
+Этот проект объединяет следующие модули:
 
-\`BSP LU ISR → LU Event Dispatcher → Call Runtime → LU Decoder → Call Controller\`
+`прерывание BSP по LU → диспетчер событий LU → Call Runtime → LU Decoder → Call Controller`
 
-and, after the address is accepted:
+После принятия адреса используется цепочка:
 
-\`active LU line → Handset Detector → CALL FSM\`
+`активная линия LU → Handset Detector → конечный автомат CALL FSM`
 
-## Safety boundary
+## Граница безопасности
 
-**The matrix outputs are simulated.** This example intentionally supplies a
-software-only Matrix Manager adapter. It does not initialise TLE94112EL or
-MC33879A driver handles, enable GPIO20 EN-DE, switch ADG1608, or turn on the
-TPS65261 power rails. It can exercise the event pipeline and print which route
-would have been requested, without connecting subscriber lines.
+**Выходы матрицы здесь только имитируются.** В примере намеренно используется программный адаптер Matrix Manager. Он не инициализирует дескрипторы драйверов TLE94112EL или MC33879A, не поднимает GPIO20 EN-DE, не переключает ADG1608 и не включает силовые шины TPS65261. Пример позволяет проверить поток событий и вывести в журнал запрошенный маршрут, не подключая абонентские линии.
 
-The example installs a sequential address map marked verified only inside its
-software simulator so the FSM can be exercised end-to-end. That flag is not a
-physical-board approval and must never be copied to a hardware profile.
+Для сквозной проверки конечного автомата пример устанавливает последовательную адресную карту, помеченную как проверенная только внутри программного симулятора. Этот флаг не является разрешением для физической платы; его нельзя копировать в аппаратный профиль.
 
-Do not replace the simulation adapter with the physical adapter until the
-apartment-to-crosspoint map, line polarity, output polarity and timing have
-been verified on the actual board with current-limited supplies and measurement
-equipment. See the Matrix Manager hardware commissioning document.
+Не заменяйте адаптер симуляции физическим адаптером, пока на реальной плате с источниками питания, ограниченными по току, и измерительным оборудованием не проверены соответствие квартир точкам коммутации, полярность линий, полярность выходов и временные интервалы. См. протокол аппаратной проверки Matrix Manager.
 
-## Build
+## Сборка
 
-\`\`\`powershell
+```powershell
 cd examples/18_call_runtime_monitor
 idf.py set-target esp32
 idf.py build
 idf.py -p COMx flash monitor
-\`\`\`
+```
 
-The example expects LU1/LU2 signals to be present on the board. With no board,
-use the pure-C native tests instead.
+Для работы примера сигналы LU1/LU2 должны быть подключены к плате. При отсутствии платы используйте автономные тесты на чистом C.
 
-## Default signal profile
+## Профиль сигналов по умолчанию
 
-The detector defaults to HIGH=Off-Hook, following the old example 04. Pickup
-and hangup confirmation are set to 60 ms, inspired by that example's polling
-cadence. These remain provisional and configurable; verify actual waveforms.
-The number decoder uses the separate provisional 120 us / 80 ms profile.
+В настройках детектора HIGH по умолчанию означает Off-Hook, как и в старом примере 04. Подтверждение снятия и укладки трубки настроено на 60 мс — это значение основано на периоде опроса старого примера. Эти параметры предварительные и настраиваемые; проверьте реальные временные диаграммы. Декодер номера использует отдельный предварительный профиль: 120 мкс / 80 мс.
 
-Call timeouts are disabled by default. A second incoming call while another
-call is active is ignored. On BSP or dispatcher event loss during a call, the
-runtime requests emergency stop and latches FAULT.
+По умолчанию тайм-ауты вызова отключены. Второй входящий вызов, поступивший во время активного разговора, игнорируется. При потере событий BSP или диспетчером во время вызова Runtime запрашивает аварийную остановку и фиксирует состояние FAULT.

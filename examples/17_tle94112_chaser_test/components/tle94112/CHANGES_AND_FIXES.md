@@ -1,4 +1,4 @@
-# TLE94112 Component — Changes and Fixes
+# Компонент TLE94112 — изменения и исправления
 
 **Дата обновления:** 6 марта 2026 г.  
 **Версия компонента:** 1.0  
@@ -55,7 +55,7 @@ if (ret != ESP_OK) {
 **Контекст:** Инициализация компонента
 
 #### Проблема
-После включения питания TLE94112 бит TSD (Thermal Shutdown) может быть установлен из-за:
+После включения питания TLE94112 бит TSD (Тепловое отключение) может быть установлен из-за:
 - Первого включения
 - Перегрева при пайке
 - Ложного срабатывания
@@ -98,14 +98,14 @@ if (ret != ESP_OK) {
 
 | Бит | Имя | Описание |
 |-----|-----|----------|
-| 7 | HW_ERROR | Hardware failure |
-| 6 | TSD | Thermal Shutdown |
-| 5 | SPI_ERROR | SPI communication error |
-| 4 | NPOR | No Power-on Reset |
-| 3 | VS_OV | Over Voltage |
-| 2 | VS_UV | Under Voltage |
-| 1 | LE | Latch Error |
-| 0 | UNUSED | Reserved |
+| 7 | HW_ERROR | Аппаратная неисправность |
+| 6 | TSD | Тепловое отключение |
+| 5 | SPI_ERROR | Ошибка обмена по SPI |
+| 4 | NPOR | Отсутствие сброса при включении питания |
+| 3 | VS_OV | Повышенное напряжение |
+| 2 | VS_UV | Пониженное напряжение |
+| 1 | LE | Ошибка фиксации (защёлки) |
+| 0 | UNUSED | Зарезервировано |
 
 В коде биты 2 и 3 были перепутаны местами.
 
@@ -113,13 +113,13 @@ if (ret != ESP_OK) {
 Приведено в соответствие с документацией:
 
 ```c
-// Бит 3: VS_OV (Over Voltage)
+// Бит 3: VS_OV (Повышенное напряжение)
 if (sys_diag & (1 << 3)) {
     ESP_LOGE(TAG, "ERROR: VS Over-Voltage detected!");
     has_error = true;
 }
 
-// Бит 2: VS_UV (Under Voltage)
+// Бит 2: VS_UV (Пониженное напряжение)
 if (sys_diag & (1 << 2)) {
     ESP_LOGW(TAG, "WARNING: VS Under-Voltage detected!");
     has_error = true;

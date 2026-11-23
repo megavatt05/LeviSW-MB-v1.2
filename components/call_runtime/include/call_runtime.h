@@ -52,9 +52,9 @@ typedef struct {
 void call_runtime_default_config(call_runtime_config_t *config);
 
 /*
- * The caller owns the Matrix Manager and must provide current GPIO levels at
- * initialization. Runtime is single-task-owned; all feed/tick calls must be
- * serialized by the application's call task.
+ * Вызывающая сторона владеет Matrix Manager и должна передать текущие уровни GPIO при
+ * инициализации. Runtime принадлежит одной задаче; все вызовы feed/tick должны быть
+ * последовательно выполнены задачей обработки вызовов приложения.
  */
 call_runtime_status_t call_runtime_init(call_runtime_t *runtime,
                                         matrix_manager_t *matrix,
@@ -64,22 +64,22 @@ call_runtime_status_t call_runtime_init(call_runtime_t *runtime,
                                         call_state_changed_fn on_state_changed,
                                         void *callback_context);
 
-/* Feed raw, timestamped LU edges from the single LU Event Dispatcher consumer. */
+/* Передать необработанные фронты LU с временными метками от единственного потребителя LU Event Dispatcher. */
 call_runtime_status_t call_runtime_feed_lu_edge(call_runtime_t *runtime,
                                                  const lu_decoder_edge_t *edge);
 
-/* Poll decoder, handset detector and Call Controller deadlines. */
+/* Проверить тайм-ауты декодера, детектора трубки и Call Controller. */
 call_runtime_status_t call_runtime_tick(call_runtime_t *runtime, int64_t now_us);
 
 /*
- * Call when BSP/dispatcher reports lost events. Active call => latched FAULT
- * and Matrix Manager emergency stop; standby => decoder resynchronisation.
+ * Вызывать при сообщении BSP/диспетчера о потере событий. Во время активного вызова устанавливается фиксируемое состояние FAULT
+ * и выполняется аварийная остановка Matrix Manager; в дежурном режиме выполняется повторная синхронизация декодера.
  */
 call_runtime_status_t call_runtime_notify_event_loss(call_runtime_t *runtime,
                                                       const bool current_levels[LU_DECODER_LINE_COUNT],
                                                       int64_t now_us);
 
-/* Explicit recovery after an external supervisor has cleared the underlying fault. */
+/* Явное восстановление после того, как внешний супервизор устранил первопричину ошибки. */
 call_runtime_status_t call_runtime_reset_fault(call_runtime_t *runtime,
                                                 const bool current_levels[LU_DECODER_LINE_COUNT],
                                                 int64_t now_us);
@@ -93,4 +93,4 @@ int call_runtime_get_active_line(const call_runtime_t *runtime);
 }
 #endif
 
-#endif /* CALL_RUNTIME_H */
+#endif /* Защита от повторного включения заголовочного файла. */

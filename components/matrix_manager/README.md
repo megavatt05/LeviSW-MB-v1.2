@@ -1,35 +1,26 @@
-# Matrix Manager
+# Менеджер матрицы
 
-The Matrix Manager is the sole software owner of the 8x10 subscriber matrix.
-Call Controller must be the only application-level client. No monitor, decoder,
-test loop, or UI task may write ADG1608, MC33879A, or TLE94112 directly while
-this manager is active.
+Matrix Manager — единственный программный владелец абонентской матрицы 8×10. На уровне приложения его клиентом должен быть только Call Controller. Пока менеджер активен, монитор, декодер, тестовая задача или интерфейс не должны напрямую записывать данные в ADG1608, MC33879A или TLE94112.
 
-## Route model and address-map gate
+## Модель маршрута и проверка адресной карты
 
-An apartment number is not converted to D/E coordinates by arithmetic at
-runtime. The manager requires an explicit versioned 80-entry board address map.
-Each entry contains one D index (0..7) and one E index (0..9).
+Номер квартиры не преобразуется в координаты D/E арифметически во время работы. Менеджеру требуется явная адресная карта платы из 80 записей с номером версии. Каждая запись содержит один индекс D (0..7) и один индекс E (0..9).
 
-The map validator requires:
-- format version 1;
-- all coordinates within D0..D7 and E0..E9;
-- no duplicate crosspoints and every crosspoint used exactly once;
-- null-terminated PCB revision, harness revision and commissioning-record fields;
-- for verified maps, all traceability fields must be non-empty.
+Проверка адресной карты требует:
 
-A sequential 1..80 map can be generated as a candidate for tests and simulation,
-but is always created with verified=false. Routing is rejected with
-MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED until an installed map is explicitly
-marked verified. The flag represents a commissioning approval; it is not a
-live electrical self-test. matrix_manager_is_ready() is false until a verified
-map is installed.
+- версии формата 1;
+- координат в пределах D0..D7 и E0..E9;
+- отсутствия повторяющихся точек коммутации и однократного использования каждой из 80 точек;
+- строковых полей с завершающим нулём для ревизии платы, ревизии жгута и записи о вводе в эксплуатацию;
+- непустых данных прослеживаемости для карты, отмеченной как проверенная.
 
-## Board signal and test-point correspondence
+Последовательную карту 1..80 можно сформировать как шаблон для тестов и симуляции, но она всегда создаётся со значением `verified=false`. Маршрутизация отклоняется с ошибкой `MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED`, пока установленная карта явно не утверждена. Этот флаг означает наличие документированного разрешения после проверки, а не результат автоматического электрического самотестирования. Функция `matrix_manager_is_ready()` возвращает false, пока не загружена проверенная карта.
 
-The supplied schematic fragment shows the D and E signal test-point groups:
+## Соответствие сигналов платы и контрольных точек
 
-| Signal | Test point | Signal | Test point |
+На предоставленном фрагменте схемы показаны следующие группы контрольных точек сигналов D и E:
+
+| Сигнал | Контрольная точка | Сигнал | Контрольная точка |
 |---|---:|---|---:|
 | D0 | TP27 | E0 | TP35 |
 | D1 | TP28 | E1 | TP36 |
@@ -42,10 +33,9 @@ The supplied schematic fragment shows the D and E signal test-point groups:
 | — | — | E8 | TP43 |
 | — | — | E9 | TP44 |
 
-The board source identifies the D outputs as MC33879A OUT1..OUT8 and the
-E outputs as TLE94112EL half-bridges with this non-linear mapping:
+В исходниках платы выходы D соответствуют MC33879A OUT1..OUT8, а выходы E — полумостам TLE94112EL с нелинейным соответствием:
 
-| E line | TLE output | Hardware half-bridge |
+| Линия E | Выход TLE | Аппаратный полумост |
 |---|---|---|
 | E0 | PO1 | HB1 |
 | E1 | PO5 | HB5 |
@@ -58,64 +48,37 @@ E outputs as TLE94112EL half-bridges with this non-linear mapping:
 | E8 | PO11 | HB11 |
 | E9 | PO8 | HB8 |
 
-HB2 / PO2 (OpenD) and HB12 / PO12 (SW-OUT12) are not ordinary E0..E9 lines.
-The schematic fragment confirms signal-to-test-point correspondence only. It
-does not identify the apartment-to-crosspoint wiring.
+HB2 / PO2 (OpenD) и HB12 / PO12 (SW-OUT12) не являются обычными линиями E0..E9. Фрагмент схемы подтверждает только соответствие сигналов контрольным точкам. Он не показывает разводку кабельного жгута от квартир к точкам коммутации.
 
-## Commissioning procedure
+## Процедура ввода матрицы в эксплуатацию
 
-Complete the [hardware matrix commissioning record](../../docs/hardware/LeviSW-MB-v1.2-matrix-commissioning.md)
-and its [80-apartment CSV template](../../docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv).
-The strict generator validates all apartment rows, connector pins, test points,
-continuity confirmations, independent review and board/harness revision metadata
-before generating a C header with verified=true.
+Заполните [протокол проверки аппаратной матрицы](../../docs/hardware/LeviSW-MB-v1.2-matrix-commissioning.md) и [CSV-шаблон для 80 квартир](../../docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv). Строгий генератор проверяет все записи квартир, контакты разъёмов, контрольные точки, подтверждения целостности цепей, независимую проверку и данные о ревизиях платы/жгута, прежде чем создать C-заголовок с `verified=true`.
 
-Keep all power rails disabled and EN-DE low during passive continuity checks.
-Disconnect external circuits that could back-feed test nodes. Powered checks are
-a separate step using current-limited supplies and measurement equipment.
-Do not mark the synthetic sequential map verified to make the application run.
+Во время пассивной проверки целостности цепей все шины питания должны быть отключены, а EN-DE должен оставаться в LOW. Отсоедините внешние цепи, которые могут подать обратное питание на контрольные точки. Проверка под напряжением выполняется отдельно, с источниками питания, ограниченными по току, и измерительным оборудованием. Не помечайте синтетическую последовательную карту как проверенную ради запуска приложения.
 
-### Known address discrepancy
+### Известное расхождение в адресации
 
-The software convention previously mapped flat 47 to D4 x E6, while the LED
-bench note calls a D0 x E6 test fixture "flat 47". This is unresolved. The map
-API supports either coordinate assignment, but neither is approved by this
-document. Resolve it from actual continuity evidence before physical call routing.
+Прежняя программная схема связывала квартиру 47 с D4×E6, тогда как в заметке о LED-стенде тестовая комбинация D0×E6 названа «квартирой 47». Противоречие не устранено. API карты поддерживает оба варианта координат, но ни один из них не утверждается этим документом. До физической маршрутизации вызовов необходимо разрешить расхождение по фактическим результатам проверки целостности цепей.
 
-## Break-before-make sequence
+## Последовательность Break-Before-Make
 
-Every route change first opens ADG1608, turns all MC33879A D outputs off,
-places all TLE94112 half-bridges in FLOATING, then disables EN-DE. After the
-configured blanking interval the manager enables the drivers, waits for wake-up,
-sets the selected decade while the analog switch is still disabled, enables one
-D output and one E output, closes ADG1608, then waits the configured route-settle
-interval before reporting the route active.
+При каждом изменении маршрута менеджер сначала отключает ADG1608, переводит все выходы MC33879A D в OFF, устанавливает все полумосты TLE94112 в состояние FLOATING, а затем отключает EN-DE. После заданного интервала блокировки менеджер разрешает работу драйверов, выдерживает время выхода из спящего режима, устанавливает выбранный десяток, пока аналоговый ключ всё ещё отключён, включает один выход D и один выход E, замыкает ADG1608 и выдерживает заданное время стабилизации маршрута. Только после этого маршрут объявляется активным.
 
-Any failed operation causes a latched FAULT and a best-effort attempt to open
-the mux, turn D outputs off, float all E outputs, and disable EN-DE. Recovery
-is explicit and succeeds only if the complete safe-off sequence succeeds.
+Любая неудачная операция фиксирует состояние FAULT и запускает наилучшую доступную попытку безопасного отключения: разомкнуть мультиплексор, отключить выходы D, перевести все выходы E в FLOATING и снять EN-DE. Восстановление выполняется явно и считается успешным только после успешного выполнения всей последовательности безопасного отключения.
 
-The core does not power TPS65261 rails or infer that PGOOD means line-safe.
-Power sequencing and telemetry validation remain the responsibility of the
-system supervisor before this manager is allowed to connect a route.
+Ядро не управляет питанием TPS65261 и не считает, что сигнал PGOOD сам по себе подтверждает безопасность абонентской линии. Последовательность включения питания и проверка телеметрии остаются обязанностью системного супервизора и должны завершиться до разрешения маршрута.
 
-## Electrical timing and polarity
+## Электрические временные параметры и полярность
 
-The core deliberately requires the board adapter to specify HIGH_SIDE or
-LOW_SIDE for the selected E output; it has no polarity default. The LED bench
-report demonstrated MC D-high-side plus one TLE E-low-side output, but this is
-not proof that every intercom call mode must use that exact polarity.
+Ядро требует, чтобы адаптер платы явно задавал режим HIGH_SIDE или LOW_SIDE для выбранного выхода E; значение полярности по умолчанию не назначается. LED-стенд продемонстрировал комбинацию MC D-high-side и одного выхода TLE E-low-side, но это не доказывает, что такой режим требуется для каждого типа вызова домофона.
 
-The 150 us break-before-make and 500 us route-settle values are provisional
-software starting points only. The 15 ms driver wake interval is taken from
-the board's documented bench sequence. Verify all timings and output polarity
-on the real board with current-limited supplies before intercom use.
+Значения 150 мкс для Break-Before-Make и 500 мкс для стабилизации маршрута являются только предварительными начальными параметрами ПО. Интервал пробуждения драйверов 15 мс взят из описанной стендовой последовательности платы. До использования домофона проверьте временные интервалы и полярность выходов на реальной плате с источниками питания, ограниченными по току.
 
-## Native tests
+## Автономные тесты
 
-\`\`\`sh
+```sh
 cmake -S components/matrix_manager/tests -B build/matrix_manager_tests
 cmake --build build/matrix_manager_tests
 ctest --test-dir build/matrix_manager_tests --output-on-failure
 python3 -m unittest discover -s tools/matrix_address_map/tests -v
-\`\`\`
+```

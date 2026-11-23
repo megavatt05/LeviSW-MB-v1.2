@@ -1,27 +1,14 @@
-# Handset Detector
+# Детектор состояния абонентской трубки
 
-Platform-independent detector for the two LU Schmitt-trigger outputs. It does
-not access GPIO, FreeRTOS, I2C, SPI, INA226, or subscriber-line power.
+Платформенно-независимый детектор для двух выходов триггера Шмитта линий LU. Он не обращается к GPIO, FreeRTOS, I2C, SPI, INA226 или питанию абонентской линии.
 
-The existing board example 04 documents LU1/LU2 HIGH as Off-Hook and LOW as
-On-Hook. This is used as the configurable default polarity, not a universal
-electrical guarantee. Older lab notes describe signal behavior in a ringing
-context differently; verify actual waveforms and polarity at XP1/TP7/TP6 and
-TP50/TP51 before enabling call routing.
+В старом примере платы 04 для LU1/LU2 уровень HIGH обозначен как Off-Hook, а LOW — как On-Hook. Это используется в качестве настраиваемой полярности по умолчанию, но не является универсальной гарантией для электрических схем всех панелей. В старых лабораторных заметках описано иное поведение сигнала во время звонка. Перед разрешением маршрутизации вызовов проверьте реальные временные диаграммы и полярность на XP1/TP7/TP6 и TP50/TP51.
 
-The detector is armed only after a valid apartment route has been connected.
-The current input level becomes its baseline, so a line already HIGH at arm
-time cannot immediately create a false pickup. A fresh Off-Hook edge creates a
-PICKUP_CANDIDATE; a sustained level confirms pickup. A short return to On-Hook
-rejects the candidate. During TALKING, a sustained On-Hook level confirms hangup.
+Детектор активируется только после подключения корректного маршрута к квартире. Текущий входной уровень становится исходным, поэтому линия, уже находящаяся в HIGH в момент активации, не вызывает ложное снятие трубки. Новый фронт Off-Hook создаёт событие `PICKUP_CANDIDATE`; устойчивый уровень подтверждает снятие. Кратковременный возврат в On-Hook отклоняет попытку. Во время `TALKING` устойчивый уровень On-Hook подтверждает завершение разговора.
 
-Default 60 ms pickup and 60 ms hangup durations are provisional software
-settings, inspired by the legacy polling example cadence; they are not measured
-panel timing requirements. Configure and scope-verify them for the actual
-intercom. The detector deliberately does not infer loop current from DD6:
-DD6 measures the +V2 power rail, not the subscriber loop.
+Значения по умолчанию — 60 мс для подтверждения снятия и 60 мс для подтверждения укладки — являются предварительными программными параметрами, основанными на периоде опроса старого примера. Это не измеренные требования конкретной панели. Настройте и проверьте их осциллографом на используемом домофоне. Детектор намеренно не вычисляет ток абонентского шлейфа по DD6: этот измеритель контролирует шину питания +V2, а не абонентский контур.
 
-## Native tests
+## Автономные тесты
 
 ```sh
 cmake -S components/handset_detector/tests -B build/handset_detector_tests

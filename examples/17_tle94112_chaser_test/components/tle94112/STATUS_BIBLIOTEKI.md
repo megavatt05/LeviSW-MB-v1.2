@@ -163,16 +163,16 @@ ret = tle94112_set_hb_state(TLE_HB6, TLE_HB_LS_ON);
 ### Ожидаемый лог успешной работы:
 
 ```
-I (293) tle94112: Init GPIO EN
-I (293) tle94112: Init SPI bus
-I (303) tle94112: Power-up TLE (EN=1)
+I (293) tle94112: Инициализация GPIO EN
+I (293) tle94112: Инициализация шины SPI
+I (303) tle94112: Включение питания TLE (EN=1)
 I (803) tle94112: SYS_DIAG_1 = 0x00           ✓ Нет ошибок
 I (803) tle94112: Device ID verified: TLE94112EL (0x00)  ✓ OK
 I (803) EX04_DIAG: TLE94112 initialized successfully
 
-I (1103) tle94112: Setting HB1 to state 1     ✓ HS_ON = 0b01
-I (1113) tle94112: Setting HB6 to state 2     ✓ LS_ON = 0b10
-I (1113) tle94112: Setting HB10 to state 1    ✓ HS_ON = 0b01
+I (1103) tle94112: Установка HB1 в состояние 1     ✓ HS_ON = 0b01
+I (1113) tle94112: Установка HB6 в состояние 2     ✓ LS_ON = 0b10
+I (1113) tle94112: Установка HB10 в состояние 1    ✓ HS_ON = 0b01
 
 I (2113) tle94112: HB_ACT_1_CTRL = 0x01       ✓ HB1=HS_ON
 I (2123) tle94112: HB_ACT_2_CTRL = 0x08       ✓ HB6=LS_ON

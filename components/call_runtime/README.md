@@ -1,63 +1,41 @@
-# Call Runtime — decoder / handset / FSM integration
+# Call Runtime — интеграция декодера, детектора трубки и FSM
 
-This single-owner runtime connects the pure components:
+Компонент Runtime с единственным владельцем связывает независимые программные модули:
 
-\`LU edge stream → LU Decoder → Call Controller → Matrix Manager\`
+`поток фронтов LU → LU Decoder → Call Controller → Matrix Manager`
 
-and, after a route is connected:
+После подключения маршрута используется цепочка:
 
-\`LU edge stream on the active line → Handset Detector → Call Controller\`
+`поток LU активной линии → Handset Detector → Call Controller`
 
-## Processing rules
+## Правила обработки
 
-1. While STANDBY, both LU lines are fed into the decoder.
-2. A complete valid address result generates CALL_DETECTED and NUMBER_READY.
-   The Call Controller validates the address and requests the Matrix Manager route.
-3. Only after the Matrix Manager reports the route connected does Runtime arm
-   the Handset Detector for the LU line that produced the number. The current
-   level is a baseline; a new Off-Hook transition is required.
-4. A fresh Off-Hook transition reports PICKUP_CANDIDATE. A sustained level
-   reports PICKUP_CONFIRMED and enters TALKING. A short transition is rejected.
-5. A sustained On-Hook transition reports HANGUP and disconnects the route.
-6. Events from another LU line do not retarget an active call. A second call
-   arriving while busy is not accepted.
-7. If the BSP/dispatcher reports dropped events during an active call, Runtime
-   sends a hardware-fault event and forces Matrix Manager emergency stop.
-   In STANDBY it simply re-baselines the decoder.
+1. В состоянии `STANDBY` обе линии LU передаются декодеру.
+2. После получения полного корректного адреса Runtime формирует события `CALL_DETECTED` и `NUMBER_READY`. Call Controller проверяет адрес и запрашивает маршрут у Matrix Manager.
+3. Только после подтверждения подключения маршрута компонент Runtime активирует Handset Detector для той линии LU, по которой был получен номер. Текущий уровень становится исходным; для обнаружения снятия требуется новый переход в состояние Off-Hook.
+4. Новый переход Off-Hook формирует `PICKUP_CANDIDATE`. Если уровень сохраняется заданное время, формируется `PICKUP_CONFIRMED` и автомат переходит в `TALKING`. Кратковременный переход отклоняется.
+5. Устойчивый переход On-Hook формирует `HANGUP` и размыкает маршрут.
+6. События с другой линии LU не меняют активный маршрут. Второй входящий вызов во время занятой линии не принимается.
+7. Если BSP или диспетчер событий сообщает о потере событий во время активного вызова, Runtime отправляет событие аппаратной ошибки и принудительно вызывает аварийную остановку Matrix Manager. В состоянии `STANDBY` выполняется только повторная синхронизация исходных уровней декодера.
 
-Call Runtime is single-task-owned. An application must use exactly one task to
-call feed/tick/notify/reset APIs. The LU Event Dispatcher continues to have one
-decoder-queue consumer; that task forwards each event to Runtime.
+Runtime принадлежит одной задаче. Приложение должно вызывать API `feed`, `tick`, `notify` и `reset` только из одной задачи. Диспетчер событий LU также должен иметь ровно одного потребителя очереди декодера; эта задача передаёт каждое событие в Runtime.
 
-## Handset polarity and timing
+## Полярность и временные параметры детектора трубки
 
-The board's legacy example 04 labels HIGH as Off-Hook and LOW as On-Hook. This
-is a configurable profile, not a verified electrical contract for every panel.
-Older bench notes discuss LU signal transitions under ringing separately.
-The defaults (HIGH active, 60 ms pickup and 60 ms hangup verification) are
-provisional. Capture actual LU waveforms and verify both channels before
-connecting subscriber lines.
+В старом примере платы 04 уровень HIGH обозначен как Off-Hook, а LOW — как On-Hook. Это настраиваемый профиль, а не подтверждённая электрическая характеристика любой панели. В старых стендовых записях отдельно описаны переходы сигнала LU во время звонка. Значения по умолчанию (HIGH — активный уровень, подтверждение снятия и укладки по 60 мс) являются предварительными. До подключения абонентских линий необходимо снять реальные временные диаграммы LU1 и LU2 и проверить полярность обоих каналов.
 
-DD6 is the +V2 rail monitor and is not a subscriber-loop current sensor. No
-handset threshold is inferred from INA226.
+DD6 контролирует шину +V2 и не является датчиком тока абонентского шлейфа. Порог снятия трубки нельзя выводить из показаний INA226.
 
-## Address-map safety gate
+## Защитная проверка адресной карты
 
-Runtime does not invent or calculate apartment coordinates. Matrix Manager
-requires a versioned, validated and explicitly verified 80-entry physical
-address map before a route can be connected. The conventional sequential map
-is available only as an unverified candidate for test fixtures and simulation.
-A missing/unverified map is rejected without touching matrix hardware.
+Runtime не вычисляет координаты квартиры самостоятельно. Для подключения маршрута Matrix Manager требует версионированную, проверенную и явно утверждённую физическую адресную карту из 80 записей. Последовательная карта доступна только как непроверенный шаблон для тестовых стендов и программной симуляции. Если карта отсутствует или не утверждена, запрос маршрута отклоняется до обращения к аппаратной матрице.
 
-The physical map must be measured against the actual harness and reviewed.
-The schematic D/E test-point table documents signal access, not apartment
-numbering. The previously noted conflict between flat 47 = D4×E6 (sequential
-software convention) and the LED bench label flat 47 = D0×E6 remains open.
+Физическую карту нужно измерить на фактическом кабельном жгуте и проверить независимым контролёром. Таблица контрольных точек D/E на схеме описывает доступ к сигналам, но не нумерацию квартир. Ранее обнаруженное противоречие остаётся нерешённым: программная последовательная схема связывает квартиру 47 с D4×E6, а обозначение стендового LED-теста указывает для квартиры 47 координаты D0×E6.
 
-## Native tests
+## Автономные тесты
 
-\`\`\`sh
+```sh
 cmake -S components/call_runtime/tests -B build/call_runtime_tests
 cmake --build build/call_runtime_tests
 ctest --test-dir build/call_runtime_tests --output-on-failure
-\`\`\`
+```

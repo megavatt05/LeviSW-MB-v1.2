@@ -46,12 +46,12 @@ typedef enum {
 
 typedef struct {
     call_event_type_t type;
-    uint8_t apartment;     /* Used only by NUMBER_READY; range is 1..80. */
-    bool decoder_valid;    /* Must be true for a complete, valid decoder result. */
+    uint8_t apartment;     /* Используется только для NUMBER_READY; допустимый диапазон — 1..80. */
+    bool decoder_valid;    /* Должно быть true для полного и корректного результата декодирования. */
 } call_event_t;
 
 typedef struct {
-    /* 0 disables the corresponding timeout until calibrated on the real panel. */
+    /* Значение 0 отключает соответствующий тайм-аут до его калибровки на реальной панели. */
     uint32_t number_capture_timeout_ms;
     uint32_t ring_timeout_ms;
     uint32_t answer_verify_timeout_ms;
@@ -77,19 +77,19 @@ typedef struct {
 
 void call_controller_default_config(call_controller_config_t *config);
 
-/* The supplied Matrix Manager must already be initialized and safely OPEN. */
+/* Переданный Matrix Manager должен быть инициализирован и находиться в безопасном состоянии OPEN. */
 call_controller_status_t call_controller_init(call_controller_t *controller,
                                                matrix_manager_t *matrix,
                                                const call_controller_config_t *config,
                                                call_state_changed_fn on_state_changed,
                                                void *callback_context);
 
-/* Process a semantic event from the protocol decoder / handset detector. */
+/* Обработать смысловое событие от декодера протокола или детектора трубки. */
 call_controller_status_t call_controller_handle_event(call_controller_t *controller,
                                                        const call_event_t *event,
                                                        uint64_t now_ms);
 
-/* Advance configured timeouts. Call periodically from the application task. */
+/* Обновить состояние настроенных тайм-аутов. Вызывать периодически из задачи приложения. */
 call_controller_status_t call_controller_tick(call_controller_t *controller,
                                                uint64_t now_ms);
 
@@ -101,4 +101,4 @@ call_controller_status_t call_controller_get_last_error(const call_controller_t 
 }
 #endif
 
-#endif /* CALL_CONTROLLER_H */
+#endif /* Защита от повторного включения заголовочного файла. */

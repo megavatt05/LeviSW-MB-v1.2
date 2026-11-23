@@ -1,6 +1,6 @@
 /**
  * @file tle94112.c
- * @brief ESP-IDF Driver for Infineon TLE94112EL Motor Driver
+ * @brief Драйвер микросхемы Infineon TLE94112EL для ESP-IDF
  *
  * Изменения от 2026-03-10:
  * - Добавлены функции программной защиты (overcurrent/overvoltage)
@@ -40,7 +40,7 @@ static const char *TAG = "TLE94112";
 #define OP_WRITE_BIT (1 << 7)
 #define LABT_BIT     (1 << 1)
 
-// Control Registers (HB_ACT_x_CTRL) - управление полумостами
+// Регистры управления (HB_ACT_x_CTRL) — управление полумостами
 #define REG_HB_ACT_1_CTRL_RD   0x03  // addr_5bit = 0b00000, HB1-4
 #define REG_HB_ACT_1_CTRL_WR   0x83
 #define REG_HB_ACT_2_CTRL_RD   0x43  // addr_5bit = 0b10000, HB5-8
@@ -48,7 +48,7 @@ static const char *TAG = "TLE94112";
 #define REG_HB_ACT_3_CTRL_RD   0x23  // addr_5bit = 0b01000, HB9-12
 #define REG_HB_ACT_3_CTRL_WR   0xA3
 
-// PWM Mode Registers (HB_MODE_x_CTRL) - выбор PWM канала
+// Регистры режима PWM (HB_MODE_x_CTRL) — выбор канала PWM
 #define REG_HB_MODE_1_CTRL_RD  0x63  // addr_5bit = 0b11000, HB1-4
 #define REG_HB_MODE_1_CTRL_WR  0xE3
 #define REG_HB_MODE_2_CTRL_RD  0x13  // addr_5bit = 0b00100, HB5-8
@@ -56,7 +56,7 @@ static const char *TAG = "TLE94112";
 #define REG_HB_MODE_3_CTRL_RD  0x53  // addr_5bit = 0b10100, HB9-12
 #define REG_HB_MODE_3_CTRL_WR  0xD3
 
-// PWM Control Registers - частота и duty cycle
+// Регистры управления PWM — частота и коэффициент заполнения
 #define REG_PWM_CH_FREQ_RD     0x33  // addr_5bit = 0b01100
 #define REG_PWM_CH_FREQ_WR     0xB3
 #define REG_PWM1_DC_RD         0x73  // addr_5bit = 0b11100
@@ -66,29 +66,29 @@ static const char *TAG = "TLE94112";
 #define REG_PWM3_DC_RD         0x4B  // addr_5bit = 0b10010
 #define REG_PWM3_DC_WR         0xCB
 
-// Free-wheeling and Open Load Control
+// Управление режимом свободного хода и обнаружением обрыва нагрузки
 #define REG_FW_OL_CTRL_RD      0x2B  // addr_5bit = 0b01010
 #define REG_FW_OL_CTRL_WR      0xAB
 #define REG_FW_CTRL_RD         0x6B  // addr_5bit = 0b11010
 #define REG_FW_CTRL_WR         0xEB
 
-// Configuration Register (Device ID) - READ ONLY
+// Регистр конфигурации (Device ID) — только чтение
 #define REG_CONFIG_CTRL_RD     0x67  // addr_5bit = 0b11001
 
-// Status Registers (SYS_DIAG_x) - диагностика
-#define REG_SYS_DIAG_1_RD      0x1B  // addr_5bit = 0b00110, Global status
-#define REG_SYS_DIAG_1_CLR     0x9B  // write to clear
-#define REG_SYS_DIAG_2_RD      0x5B  // addr_5bit = 0b10110, Overcurrent HB1-4
+// Регистры состояния (SYS_DIAG_x) — диагностика
+#define REG_SYS_DIAG_1_RD      0x1B  // addr_5bit = 0b00110, общий статус
+#define REG_SYS_DIAG_1_CLR     0x9B  // запись для очистки
+#define REG_SYS_DIAG_2_RD      0x5B  // addr_5bit = 0b10110, сверхток HB1-4
 #define REG_SYS_DIAG_2_CLR     0xDB
-#define REG_SYS_DIAG_3_RD      0x3B  // addr_5bit = 0b01110, Overcurrent HB5-8
+#define REG_SYS_DIAG_3_RD      0x3B  // addr_5bit = 0b01110, сверхток HB5-8
 #define REG_SYS_DIAG_3_CLR     0xBB
-#define REG_SYS_DIAG_4_RD      0x7B  // addr_5bit = 0b11110, Overcurrent HB9-12
+#define REG_SYS_DIAG_4_RD      0x7B  // addr_5bit = 0b11110, сверхток HB9-12
 #define REG_SYS_DIAG_4_CLR     0xFB
-#define REG_SYS_DIAG_5_RD      0x07  // addr_5bit = 0b00001, Open Load HB1-4
+#define REG_SYS_DIAG_5_RD      0x07  // addr_5bit = 0b00001, обрыв нагрузки HB1-4
 #define REG_SYS_DIAG_5_CLR     0x87
-#define REG_SYS_DIAG_6_RD      0x47  // addr_5bit = 0b10001, Open Load HB5-8
+#define REG_SYS_DIAG_6_RD      0x47  // addr_5bit = 0b10001, обрыв нагрузки HB5-8
 #define REG_SYS_DIAG_6_CLR     0xC7
-#define REG_SYS_DIAG_7_RD      0x27  // addr_5bit = 0b01001, Open Load HB9-12
+#define REG_SYS_DIAG_7_RD      0x27  // addr_5bit = 0b01001, обрыв нагрузки HB9-12
 #define REG_SYS_DIAG_7_CLR     0xA7
 
 // Маски для SYS_DIAG_1
@@ -126,13 +126,13 @@ static esp_err_t spi_transaction(tle94112_handle_t handle, uint8_t addr_byte, ui
         .length = 16,
         .tx_buffer = tx_buf,
         .rx_buffer = rx_buf,
-        .flags = 0, // LSB-first уже задан в device config
+        .flags = 0, // Порядок LSB-first уже задан в конфигурации SPI-устройства
     };
 
     esp_err_t ret = spi_device_transmit(handle->spi_dev, &t);
     if (ret != ESP_OK) return ret;
 
-    // rx_buf[0] - Global Status (возвращается всегда, но мы его пока игнорируем)
+    // rx_buf[0] — общий статус (возвращается всегда, но пока не используется)
     // rx_buf[1] - Данные регистра (при чтении)
     if (rx_data) *rx_data = rx_buf[1];
     
@@ -169,13 +169,13 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
     }
 
     // 3. Настройка SPI (Mode 1, LSB-first!)
-    // TLE94112 требует LSB-first (см. datasheet Figure 19)
+    // TLE94112 требует порядок LSB-first (см. рисунок 19 технической документации)
     spi_device_interface_config_t devcfg = {
         .mode = 1,                  // CPOL=0, CPHA=1
         .clock_speed_hz = config->spi_freq_hz,
         .spics_io_num = config->gpio_cs,
         .queue_size = 3,
-        .flags = SPI_DEVICE_BIT_LSBFIRST,  // LSB-first!
+        .flags = SPI_DEVICE_BIT_LSBFIRST,  // Порядок LSB-first!
     };
     
     esp_err_t add_err = spi_bus_add_device(config->spi_host, &devcfg, &handle->spi_dev);
@@ -189,7 +189,7 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
     // 4. Включение чипа
     if (handle->en_gpio >= 0) {
         gpio_set_level(handle->en_gpio, 1);
-        vTaskDelay(pdMS_TO_TICKS(10)); // Время выхода из Sleep
+        vTaskDelay(pdMS_TO_TICKS(10)); // Время выхода из режима сна Sleep
     }
 
     // 5. Проверка Device ID (чтение CONFIG_CTRL)
@@ -220,7 +220,7 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
     }
     ESP_LOGI(TAG, "Detected: TLE94112EL (ID=0x00)");
 
-    // 6. Сброс регистров и кеша
+    // 6. Сброс регистров и кэша
     handle->ctrl_cache[0] = 0;
     handle->ctrl_cache[1] = 0;
     handle->ctrl_cache[2] = 0;
@@ -296,7 +296,7 @@ esp_err_t tle94112_set_hb_state(tle94112_handle_t handle, tle_hb_idx_t hb, tle_h
 
     bit_pos = hb * 2;
 
-    // Read-Modify-Write (используем кеш)
+    // Чтение–изменение–запись (Read-Modify-Write, используется кэш)
     uint8_t current_val = handle->ctrl_cache[reg_idx];
     current_val &= ~(0x03 << bit_pos);      
     current_val |= ((uint8_t)state << bit_pos); 
@@ -386,14 +386,14 @@ esp_err_t tle94112_diagnose(tle94112_handle_t handle) {
 
     ESP_LOGI(TAG, "SYS_DIAG_1: 0x%02X", sys_diag);
 
-    // Биты SYS_DIAG_1 согласно datasheet стр. 66:
-    // D7: SPI_ERR - SPI protocol error
-    // D6: LE - Load Error (OC or OL)
-    // D5: VS_UV - Undervoltage
-    // D4: VS_OV - Overvoltage
-    // D3: NPOR - Not Power On Reset
-    // D2: TSD - Thermal Shutdown
-    // D1: TPW - Temperature Pre-Warning
+    // Биты SYS_DIAG_1 согласно технической документации, стр. 66:
+    // D7: SPI_ERR — ошибка протокола SPI
+    // D6: LE — ошибка нагрузки (сверхток или обрыв)
+    // D5: VS_UV — пониженное напряжение
+    // D4: VS_OV — повышенное напряжение
+    // D3: NPOR — отсутствие сброса при включении питания
+    // D2: TSD — тепловое отключение
+    // D1: TPW — предварительное предупреждение о перегреве
     if (sys_diag & SYS_DIAG_SPI_ERR) ESP_LOGE(TAG, "SPI_ERROR");
     if (sys_diag & SYS_DIAG_LE)      ESP_LOGE(TAG, "LE (Load Error: OC or OL)");
     if (sys_diag & SYS_DIAG_VS_UV)   ESP_LOGE(TAG, "VS_UV (Undervoltage)");
@@ -450,7 +450,7 @@ esp_err_t tle94112_get_overcurrent(tle94112_handle_t handle, uint16_t *oc_mask) 
 
     // Чтение SYS_DIAG_2 (OC HB1-4), SYS_DIAG_3 (OC HB5-8), SYS_DIAG_4 (OC HB9-12)
     // Каждый регистр: 2 бита на HB, бит 0 = OC_HS, бит 1 = OC_LS
-    // Если любой бит = 1, значит есть overcurrent
+    // Если любой бит равен 1, обнаружен сверхток
     
     esp_err_t ret;
     ret = spi_transaction(handle, REG_SYS_DIAG_2_RD, 0x00, &diag2);
@@ -462,7 +462,7 @@ esp_err_t tle94112_get_overcurrent(tle94112_handle_t handle, uint16_t *oc_mask) 
     ret = spi_transaction(handle, REG_SYS_DIAG_4_RD, 0x00, &diag4);
     if (ret != ESP_OK) return ret;
 
-    // Защита от 0xFF: если чип в слипе / шина свободна / MISO подтянут к VDD,
+    // Защита от 0xFF: если микросхема находится в режиме сна, шина свободна или MISO подтянут к VDD,
     // все считанные байты равны 0xFF. Это означает отсутствие ответа, а не перегрузку всех 12 полумостов!
     if (diag2 == 0xFF && diag3 == 0xFF && diag4 == 0xFF) {
         ESP_LOGE(TAG, "No valid TLE94112 response while reading overcurrent registers");
@@ -508,7 +508,7 @@ esp_err_t tle94112_get_openload(tle94112_handle_t handle, uint16_t *ol_mask) {
     ret = spi_transaction(handle, REG_SYS_DIAG_7_RD, 0x00, &diag7);
     if (ret != ESP_OK) return ret;
 
-    // Защита от 0xFF: если чип в слипе / шина свободна, не считаем это обрывом на всех каналах
+    // Защита от 0xFF: если микросхема находится в режиме сна или шина свободна, это не считается обрывом всех каналов
     if (diag5 == 0xFF && diag6 == 0xFF && diag7 == 0xFF) {
         ESP_LOGE(TAG, "No valid TLE94112 response while reading open-load registers");
         return ESP_ERR_INVALID_RESPONSE;
@@ -556,10 +556,10 @@ esp_err_t tle94112_clear_openload(tle94112_handle_t handle) {
 esp_err_t tle94112_full_diagnose(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
 
-    // Глобальная диагностика
+    // Общая диагностика
     tle94112_diagnose(handle);
 
-    // Overcurrent
+    // Сверхток
     uint16_t oc_mask = 0;
     tle94112_get_overcurrent(handle, &oc_mask);
     if (oc_mask) {
@@ -573,7 +573,7 @@ esp_err_t tle94112_full_diagnose(tle94112_handle_t handle) {
         ESP_LOGI(TAG, "No overcurrent");
     }
 
-    // Open Load
+    // Обрыв нагрузки
     uint16_t ol_mask = 0;
     tle94112_get_openload(handle, &ol_mask);
     if (ol_mask) {
@@ -614,7 +614,7 @@ tle_fault_reason_t tle94112_check_protection(tle94112_handle_t handle, uint16_t 
     tle_fault_reason_t fault = TLE_FAULT_NONE;
     const tle94112_protection_config_t *cfg = &handle->protection_config;
     
-    // 1. Проверка overcurrent (аппаратная)
+    // 1. Проверка сверхтока (аппаратная)
     if (cfg->enable_overcurrent) {
         uint16_t oc_mask = 0;
         if (tle94112_get_overcurrent(handle, &oc_mask) == ESP_OK) {
@@ -627,7 +627,7 @@ tle_fault_reason_t tle94112_check_protection(tle94112_handle_t handle, uint16_t 
         }
     }
     
-    // 2. Проверка open load (аппаратная)
+    // 2. Проверка обрыва нагрузки (аппаратная)
     if (cfg->enable_openload && fault == TLE_FAULT_NONE) {
         uint16_t ol_mask = 0;
         if (tle94112_get_openload(handle, &ol_mask) == ESP_OK) {
@@ -638,7 +638,7 @@ tle_fault_reason_t tle94112_check_protection(tle94112_handle_t handle, uint16_t 
         }
     }
     
-    // 3. Проверка напряжения (от INA226)
+    // 3. Проверка напряжения (по данным INA226)
     if (voltage_mv > 0) {
         if (cfg->enable_overvoltage && cfg->overvoltage_mv > 0) {
             if (voltage_mv >= cfg->overvoltage_mv) {
@@ -669,7 +669,7 @@ tle_fault_reason_t tle94112_check_protection(tle94112_handle_t handle, uint16_t 
         }
     }
     
-    // 5. Проверка SPI ошибок
+    // 5. Проверка ошибок SPI
     if (fault == TLE_FAULT_NONE) {
         uint8_t sys_diag = 0;
         spi_transaction(handle, REG_SYS_DIAG_1_RD, 0x00, &sys_diag);

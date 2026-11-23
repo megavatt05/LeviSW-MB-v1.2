@@ -103,7 +103,7 @@ static int test_missing_half_pulse_is_invalid(void)
 
     bool level = false;
     int64_t time_us = 1000;
-    /* One lost transition causes a repeated sampled level and invalidates the burst. */
+    /* Потеря одного перехода приводит к повторной выборке того же уровня и делает пакет некорректным. */
     emit_address(&decoder, LU_DECODER_LINE_1, 9U, &level, &time_us, 5U);
 
     lu_decoder_result_t result;
@@ -143,7 +143,7 @@ static int test_complete_missing_pulse_limitation_is_explicit(void)
 
     bool level = false;
     int64_t time_us = 1000;
-    /* Pulse-count-only framing cannot know that a whole pulse pair was omitted. */
+    /* Кадрирование только по количеству импульсов не позволяет обнаружить пропуск целой пары переходов одного импульса. */
     emit_address(&decoder, LU_DECODER_LINE_1, 8U, &level, &time_us, UINT16_MAX);
 
     lu_decoder_result_t result;

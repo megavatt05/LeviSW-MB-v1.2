@@ -24,7 +24,7 @@ static int test_pickup_requires_new_off_hook_edge_and_confirmation(void)
     CHECK(make_detector(&detector) == 0);
     CHECK(handset_detector_arm(&detector, HANDSET_LINE_1, true, 100000U));
 
-    /* Already HIGH when armed is baseline, not a pickup event. */
+    /* Если при активации уровень уже HIGH, это исходное состояние, а не событие снятия трубки. */
     CHECK(handset_detector_poll(&detector, 100000U) == HANDSET_EVENT_NONE);
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, false, 110000U) ==
           HANDSET_EVENT_NONE);

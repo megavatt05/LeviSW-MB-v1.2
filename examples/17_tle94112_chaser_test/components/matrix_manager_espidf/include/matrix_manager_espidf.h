@@ -11,16 +11,16 @@ extern "C" {
 #endif
 
 /*
- * Adapter context holds borrowed driver handles. The application must keep both
- * drivers alive for as long as the Matrix Manager is initialized. No ownership
- * or deinitialization is transferred to this adapter.
+ * Контекст адаптера содержит заимствованные дескрипторы драйверов. Приложение должно сохранять оба
+ * драйвера действующими всё время, пока инициализирован Matrix Manager. Владение
+ * ресурсами и обязанности по деинициализации этому адаптеру не передаются.
  */
 typedef struct {
     tle94112_handle_t tle;
     mc33879a_handle_t *mc;
 } matrix_manager_espidf_t;
 
-/* Fill core hardware operations; call only after BSP, TLE and MC are initialized. */
+/* Заполнить основные аппаратные операции; вызывать только после инициализации BSP, TLE и MC. */
 esp_err_t matrix_manager_espidf_make_ops(matrix_manager_espidf_t *adapter,
                                          tle94112_handle_t tle,
                                          mc33879a_handle_t *mc,
@@ -30,4 +30,4 @@ esp_err_t matrix_manager_espidf_make_ops(matrix_manager_espidf_t *adapter,
 }
 #endif
 
-#endif /* MATRIX_MANAGER_ESP_IDF_H */
+#endif /* Защита от повторного включения заголовочного файла. */

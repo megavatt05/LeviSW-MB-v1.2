@@ -1,10 +1,8 @@
-# Call Controller FSM
+# Контроллер вызовов — конечный автомат (FSM)
 
-The Call Controller is a platform-independent, event-driven finite-state
-machine. It receives *semantic* events from the LU decoder and a future handset
-detector; it does not read GPIO or access the bus drivers directly.
+Контроллер вызовов — платформенно-независимая событийная конечная машина состояний. Он получает смысловые события от декодера LU и будущего детектора трубки; GPIO и драйверы шин напрямую не опрашивает и не использует.
 
-## States
+## Состояния
 
 ```text
 STANDBY
@@ -17,36 +15,27 @@ STANDBY
   -> HANGUP
   -> STANDBY
 
-Any hardware/Matrix Manager error -> FAULT
-FAULT -> explicit FAULT_RESET after Matrix Manager safe-off succeeds
+Любая ошибка оборудования или Matrix Manager -> FAULT
+FAULT -> явный FAULT_RESET после успешного перевода Matrix Manager в безопасное состояние
 ```
 
-- `CALL_DETECTED` starts number capture.
-- `NUMBER_READY` is accepted only in CAPTURE_NUMBER and only when the decoder
-  marks the packet valid and the apartment is in 1..80.
-- ROUTE_PREPARE calls Matrix Manager. RINGING begins only after the route is
-  successfully connected.
-- PICKUP_CANDIDATE starts ANSWER_VERIFY. Only PICKUP_CONFIRMED enters TALKING.
-  A rejected or unconfirmed pickup returns to RINGING without opening the route.
-- The selected crosspoint remains continuously connected in RINGING,
-  ANSWER_VERIFY, and TALKING. There is no subscriber scan while a call is active.
-- HANGUP/CANCEL opens the crosspoint and returns to STANDBY.
-- A hardware fault latches FAULT and invokes Matrix Manager emergency stop.
-  Reset is explicit; it does not automatically retry the call.
+- `CALL_DETECTED` начинает захват номера.
+- `NUMBER_READY` принимается только в состоянии `CAPTURE_NUMBER`, только если декодер пометил пакет как корректный и номер квартиры находится в диапазоне 1..80.
+- В состоянии `ROUTE_PREPARE` вызывается Matrix Manager. Состояние `RINGING` начинается только после успешного подключения маршрута.
+- `PICKUP_CANDIDATE` запускает проверку ответа `ANSWER_VERIFY`. В `TALKING` можно перейти только после `PICKUP_CONFIRMED`. Отклонённое или неподтверждённое снятие трубки возвращает автомат в `RINGING`, не размыкая маршрут.
+- Выбранная точка коммутации остаётся подключённой на протяжении состояний `RINGING`, `ANSWER_VERIFY` и `TALKING`. Во время активного вызова сканирование абонентов не выполняется.
+- `HANGUP` или `CANCEL` размыкает точку коммутации и возвращает автомат в `STANDBY`.
+- Аппаратная ошибка фиксирует состояние `FAULT` и вызывает аварийную остановку Matrix Manager. Сброс выполняется явно; автоматического повтора вызова нет.
 
-## Boundaries not implemented yet
+## Пока не реализовано
 
-This FSM does not generate an analog ring voltage or audio, and it does not
-decide handset pickup. A separate detector must provide stable semantic
-PICKUP_CANDIDATE / PICKUP_CONFIRMED / PICKUP_REJECTED / HANGUP events.
-No direct voltage/current threshold is assumed. DD6 measures +V2 rail current,
-not subscriber loop current, and its conversion time is unsuitable as a
-sub-millisecond loop detector.
+Этот автомат не формирует аналоговое напряжение вызова или аудиосигнал и не определяет снятие трубки. Отдельный детектор должен выдавать устойчивые смысловые события `PICKUP_CANDIDATE`, `PICKUP_CONFIRMED`, `PICKUP_REJECTED` и `HANGUP`.
 
-Timeout values default to disabled (zero) until measured panel timing is
-available. Configure them explicitly after capturing real call traces.
+Пороговые значения напряжения или тока напрямую не предполагаются. DD6 измеряет ток шины питания +V2, а не ток абонентской линии; время преобразования INA226 также не подходит для обнаружения состояния шлейфа с точностью до долей миллисекунды.
 
-## Host tests
+По умолчанию тайм-ауты отключены (значение 0), пока не измерены временные параметры реальной панели. Задавайте их явно только после записи и анализа реальных временных диаграмм вызова.
+
+## Автономные тесты на ПК
 
 ```sh
 cmake -S components/call_controller/tests -B build/call_controller_tests
@@ -54,11 +43,6 @@ cmake --build build/call_controller_tests
 ctest --test-dir build/call_controller_tests --output-on-failure
 ```
 
-The tests use fake Matrix Manager hardware operations and verify the normal
-lifecycle, rejection of invalid addresses, timeouts, no rescan during TALKING,
-and fault recovery.
+В тестах используются имитации аппаратных операций Matrix Manager. Проверяются штатный цикл вызова, отклонение неверных адресов, тайм-ауты, отсутствие повторного сканирования во время `TALKING` и восстановление после ошибки.
 
-
-The configured `ring_timeout_ms` is measured from the first transition into
-RINGING and is not extended by pickup verification retries. The answer-verification
-timeout is per PICKUP_CANDIDATE attempt.
+Настроенный `ring_timeout_ms` отсчитывается от первого перехода в `RINGING` и не продлевается повторными попытками подтверждения снятия трубки. Тайм-аут проверки ответа применяется отдельно к каждой попытке `PICKUP_CANDIDATE`.

@@ -1,22 +1,12 @@
-# LU event dispatcher
+# Диспетчер событий LU
 
-This ESP-IDF component is the **only consumer** of
-`levisw_bsp_lu_event_receive()`. It forwards each timestamped raw transition
-to two independent FIFO queues:
+Этот компонент ESP-IDF является **единственным потребителем** функции `levisw_bsp_lu_event_receive()`. Он передаёт каждое событие сырого перехода с временной меткой в две независимые FIFO-очереди:
 
-- **decoder queue** — consumed by exactly one protocol decoder task;
-- **monitor queue** — consumed by exactly one diagnostics/stable-level task.
+- **Очередь декодера** — её читает ровно одна задача декодирования протокола.
+- **Очередь мониторинга** — её читает ровно одна задача диагностики и контроля стабильных уровней.
 
-The dispatcher does not debounce, decode apartment numbers, access I2C/SPI,
-or control the matrix. The downstream queues are independent: a slow monitor
-cannot steal events from the decoder.
+Диспетчер не выполняет подавление дребезга, не декодирует номера квартир, не обращается к I2C/SPI и не управляет матрицей. Выходные очереди независимы: медленный монитор не может забрать события у декодера.
 
-Queue overflows and BSP receive errors are counted separately. The decoder
-application must discard its current partial frame and resynchronise GPIO levels
-after a decoder-queue drop, BSP queue overflow, or BSP read error. A consumer
-must not silently treat an incomplete event stream as a valid apartment code.
+Переполнения очередей и ошибки получения событий от BSP учитываются отдельно. При потере события в очереди декодера, переполнении очереди BSP или ошибке чтения приложение декодера должно отбросить текущий незавершённый пакет и повторно синхронизировать уровни GPIO. Потребитель не должен молча трактовать неполный поток событий как корректный код квартиры.
 
-Call `lu_event_dispatcher_start()` only after `levisw_bsp_init()`. Stop subscriber
-tasks before calling `lu_event_dispatcher_stop()`. Each receive queue is
-single-consumer; additional listeners must be added as another explicit fan-out
-queue rather than calling a receive API from a second task.
+Вызывайте `lu_event_dispatcher_start()` только после `levisw_bsp_init()`. Перед вызовом `lu_event_dispatcher_stop()` остановите задачи-потребители. У каждой очереди должен быть один потребитель. Если требуется ещё один слушатель, добавьте отдельную очередь разветвления; не вызывайте API чтения из второй задачи.
