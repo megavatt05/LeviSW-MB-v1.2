@@ -28,7 +28,7 @@ static matrix_manager_status_t adapter_set_d_mask(void *context, uint8_t mask)
 
     uint8_t faults = 0U;
     esp_err_t err = mc33879a_set_outputs(adapter->mc, mask, &faults);
-    if (err != ESP_OK) {
+    if ((err != ESP_OK) || (faults != 0U)) {
         return MATRIX_MANAGER_ERR_IO;
     }
 
