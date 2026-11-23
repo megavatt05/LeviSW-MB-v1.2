@@ -51,6 +51,23 @@ typedef enum {
     LEVISW_INA_V2 = 1,    /**< DD6 (0x41): телеметрия шины +V2 (шунт R62 = 20 мОм) */
 } levisw_ina_channel_t;
 
+/** Идентификатор входной линии детекции трубки. */
+typedef enum {
+    LEVISW_LU_LINE_1 = 1, /**< LU1: GPIO36 / DO1 */
+    LEVISW_LU_LINE_2 = 2, /**< LU2: GPIO37 / DO2 */
+} levisw_lu_line_t;
+
+/**
+ * @brief Событие изменения уровня на входе LU1 или LU2.
+ * timestamp_us — монотонная временная метка esp_timer в микросекундах,
+ * зафиксированная в ISR; level — фактический логический уровень после буфера Шмитта.
+ */
+typedef struct {
+    levisw_lu_line_t line;
+    bool             level;
+    int64_t          timestamp_us;
+} levisw_bsp_lu_event_t;
+
 /**
  * @brief Инициализировать все шины, периферию и безопасные начальные состояния платы LeviSW-MB v1.2.
  *
@@ -170,6 +187,20 @@ bool levisw_bsp_lu1_read(void);
 
 /** Прочитать логический уровень линии LU2 (GPIO37 после триггера Шмитта DD1). */
 bool levisw_bsp_lu2_read(void);
+
+/**
+ * @brief Получить следующее событие фронта LU1/LU2 из очереди FreeRTOS.
+ * @param event      Заполняемое событие.
+ * @param timeout_ms Таймаут ожидания в мс; UINT32_MAX означает ждать бесконечно.
+ * @return ESP_OK, ESP_ERR_TIMEOUT или другая ошибка состояния/аргумента.
+ *
+ * ISR только фиксирует фронт и помещает короткое событие в очередь.
+ * Фильтрация дребезга и прикладная логика выполняются вызывающей задачей.
+ */
+esp_err_t levisw_bsp_lu_event_receive(levisw_bsp_lu_event_t *event, uint32_t timeout_ms);
+
+/** Число событий LU, отброшенных ISR из-за переполнения очереди с момента BSP init. */
+uint32_t levisw_bsp_lu_event_dropped_count(void);
 
 /** Измерить напряжение шины +Vamp в милливольтах (учтён делитель 510 кОм / 75 кОм). */
 esp_err_t levisw_bsp_vamp_read_mv(uint32_t *vamp_mv);
