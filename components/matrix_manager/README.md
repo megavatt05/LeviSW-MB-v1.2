@@ -26,8 +26,8 @@ Every route change first opens ADG1608, turns all MC33879A D outputs off,
 places all TLE94112 half-bridges in FLOATING, then disables EN-DE. After the
 configured blanking interval the manager enables the drivers, waits for wake-up,
 sets the selected decade while the analog switch is still disabled, enables one
-D output and one E output, waits for the configured settling interval, and
-closes ADG1608 last.
+D output and one E output, closes ADG1608, then waits the configured route-settle
+interval before reporting the route active.
 
 Any failed operation causes a latched FAULT and a best-effort attempt to open
 the mux, turn D outputs off, float all E outputs, and disable EN-DE. Recovery
