@@ -184,6 +184,29 @@ static int test_answer_not_confirmed_returns_to_ringing(void)
     return 0;
 }
 
+
+static int test_ring_timeout_is_not_extended_by_pickup_rejections(void)
+{
+    call_controller_t call;
+    matrix_manager_t matrix;
+    fake_hw_t fake;
+    call_controller_config_t config;
+    memset(&fake, 0, sizeof(fake));
+    CHECK(make_controller(&call, &matrix, &fake, &config) == CALL_CONTROLLER_OK);
+
+    CHECK(send_event(&call, CALL_EVENT_CALL_DETECTED, 0U, false, 0U) == CALL_CONTROLLER_OK);
+    CHECK(send_event(&call, CALL_EVENT_NUMBER_READY, 6U, true, 10U) == CALL_CONTROLLER_OK);
+    CHECK(send_event(&call, CALL_EVENT_PICKUP_CANDIDATE, 0U, false, 20000U) == CALL_CONTROLLER_OK);
+    CHECK(send_event(&call, CALL_EVENT_PICKUP_REJECTED, 0U, false, 20100U) == CALL_CONTROLLER_OK);
+    CHECK(call_controller_get_state(&call) == CALL_STATE_RINGING);
+
+    /* Ring timeout is measured from first entry to RINGING, not last pickup retry. */
+    CHECK(call_controller_tick(&call, 60010U) == CALL_CONTROLLER_OK);
+    CHECK(call_controller_get_state(&call) == CALL_STATE_STANDBY);
+    CHECK(matrix_manager_get_state(&matrix) == MATRIX_MANAGER_STATE_OPEN);
+    return 0;
+}
+
 static int test_hardware_fault_latches_until_explicit_reset(void)
 {
     call_controller_t call;
@@ -210,6 +233,7 @@ int main(void)
     CHECK(test_invalid_decoded_number_never_connects() == 0);
     CHECK(test_capture_timeout_returns_to_standby() == 0);
     CHECK(test_answer_not_confirmed_returns_to_ringing() == 0);
+    CHECK(test_ring_timeout_is_not_extended_by_pickup_rejections() == 0);
     CHECK(test_hardware_fault_latches_until_explicit_reset() == 0);
     puts("All call controller tests passed.");
     return 0;
