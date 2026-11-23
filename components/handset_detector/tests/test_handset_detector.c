@@ -25,7 +25,7 @@ static int test_pickup_requires_new_off_hook_edge_and_confirmation(void)
     CHECK(handset_detector_arm(&detector, HANDSET_LINE_1, true, 100000U));
 
     /* Already HIGH when armed is baseline, not a pickup event. */
-    CHECK(handset_detector_poll(&detector, 1000000U) == HANDSET_EVENT_NONE);
+    CHECK(handset_detector_poll(&detector, 100000U) == HANDSET_EVENT_NONE);
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, false, 110000U) ==
           HANDSET_EVENT_NONE);
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, true, 120500U) ==
@@ -73,15 +73,15 @@ static int test_hangup_glitch_returns_to_talking(void)
     handset_detector_t detector;
     CHECK(make_detector(&detector) == 0);
     CHECK(handset_detector_arm(&detector, HANDSET_LINE_1, false, 0U));
-    CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, true, 10U) ==
+    CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, true, 10000U) ==
           HANDSET_EVENT_PICKUP_CANDIDATE);
-    CHECK(handset_detector_poll(&detector, 70U) == HANDSET_EVENT_PICKUP_CONFIRMED);
-    CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, false, 100U) ==
+    CHECK(handset_detector_poll(&detector, 70000U) == HANDSET_EVENT_PICKUP_CONFIRMED);
+    CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, false, 100000U) ==
           HANDSET_EVENT_NONE);
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, true, 120000U) ==
           HANDSET_EVENT_NONE);
     CHECK(handset_detector_get_state(&detector) == HANDSET_STATE_TALKING);
-    CHECK(handset_detector_poll(&detector, 1000U) == HANDSET_EVENT_NONE);
+    CHECK(handset_detector_poll(&detector, 1000000U) == HANDSET_EVENT_NONE);
     return 0;
 }
 
