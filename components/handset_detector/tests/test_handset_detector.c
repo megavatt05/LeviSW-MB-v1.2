@@ -89,7 +89,7 @@ static int test_wrong_line_and_old_timestamps_are_ignored(void)
 {
     handset_detector_t detector;
     CHECK(make_detector(&detector) == 0);
-    CHECK(handset_detector_arm(&detector, HANDSET_LINE_1, false, 100U));
+    CHECK(handset_detector_arm(&detector, HANDSET_LINE_1, false, 100000U));
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_2, true, 110U) ==
           HANDSET_EVENT_NONE);
     CHECK(handset_detector_feed(&detector, HANDSET_LINE_1, true, 90000U) ==
