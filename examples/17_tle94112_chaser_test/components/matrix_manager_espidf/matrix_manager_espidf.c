@@ -27,14 +27,18 @@ static matrix_manager_status_t adapter_set_d_mask(void *context, uint8_t mask)
     }
 
     uint8_t faults = 0U;
-    esp_err_t err = mc33879a_set_outputs(adapter->mc, mask, &faults);
-    if ((err != ESP_OK) || (faults != 0U)) {
+    /*
+     * The RX word of this SPI transaction describes the previous frame.
+     * Ignore it; issue a separate readback frame and validate that response.
+     */
+    esp_err_t err = mc33879a_set_outputs(adapter->mc, mask, NULL);
+    if (err != ESP_OK) {
         return MATRIX_MANAGER_ERR_IO;
     }
 
     /*
-     * MC33879A returns diagnostics for the previous SPI frame. Read once more
-     * in a separate frame so a newly selected D line is not accepted blindly.
+     * MC33879A returns diagnostics for the previous SPI frame. This second
+     * command's RX data now describes the just-applied output mask.
      */
     err = mc33879a_read_faults(adapter->mc, &faults);
     if ((err != ESP_OK) || (faults != 0U)) {
