@@ -6,6 +6,7 @@ on:
       - fix/safety-driver-audit
     paths:
       - "examples/18_call_runtime_monitor/**"
+      - "examples/17_tle94112_chaser_test/components/matrix_manager_espidf/**"
       - "bsp/levisw-mb-v1.2/**"
       - "components/call_runtime/**"
       - "components/call_controller/**"
