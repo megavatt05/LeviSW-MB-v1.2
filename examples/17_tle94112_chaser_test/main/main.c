@@ -241,7 +241,8 @@ void app_main(void)
     ESP_LOGI(TAG, "Этап 5: Проверка телеметрии питания до включения драйверов...");
     esp_err_t power_err = app_check_power();
     if (power_err != ESP_OK) {
-        ESP_LOGE(TAG, "Питание не готово (PGOOD=0). EN-DE остаётся LOW, запуск силовых выходов отменён.");
+        ESP_LOGE(TAG, "Проверка питания/телеметрии не пройдена. Отключаем +V1/+V2; EN-DE остаётся LOW.");
+        (void)levisw_bsp_power_set(false, false, false, false);
         return;
     }
 
