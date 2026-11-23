@@ -5,6 +5,8 @@ idf_component_register(
         "."
     REQUIRES
         levisw-mb-v1.2
+        lu_decoder
+        lu_event_dispatcher
         tle94112
         mc33879a
         driver
