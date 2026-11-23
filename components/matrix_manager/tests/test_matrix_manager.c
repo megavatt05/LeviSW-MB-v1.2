@@ -98,6 +98,16 @@ static void fake_delay(void *ctx, uint32_t delay_us)
     record(hw, OP_DELAY, delay_us);
 }
 
+static void approve_test_map(matrix_manager_address_map_t *map,
+                             const char *record_id)
+{
+    map->verified = true;
+    (void)snprintf(map->pcb_revision, sizeof(map->pcb_revision), "%s", "TEST-PCB");
+    (void)snprintf(map->harness_revision, sizeof(map->harness_revision), "%s", "TEST-HARNESS");
+    (void)snprintf(map->commissioning_record, sizeof(map->commissioning_record),
+                   "%s", record_id);
+}
+
 static int setup_unmapped(matrix_manager_t *manager, fake_hw_t *fake)
 {
     matrix_manager_hw_ops_t hw = {
@@ -123,8 +133,7 @@ static int install_sequential_test_map(matrix_manager_t *manager)
 {
     matrix_manager_address_map_t map;
     matrix_manager_address_map_make_sequential_candidate(&map);
-    /* Test fixture only. This does not certify the physical apartment wiring. */
-    map.verified = true;
+    approve_test_map(&map, "NATIVE-TEST-ONLY");
     return (int)matrix_manager_set_address_map(manager, &map);
 }
 
@@ -141,6 +150,7 @@ static int test_unverified_map_blocks_routing_without_hardware_writes(void)
     matrix_manager_t manager;
     fake_hw_t fake;
     CHECK(setup_unmapped(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(!matrix_manager_is_ready(&manager));
     fake.count = 0U;
 
     CHECK(matrix_manager_connect(&manager, 47U) ==
@@ -169,8 +179,8 @@ static int test_invalid_or_duplicate_map_is_rejected(void)
 
     matrix_manager_address_map_t invalid;
     matrix_manager_address_map_make_sequential_candidate(&invalid);
-    invalid.verified = true;
-    invalid.apartments[46] = invalid.apartments[0]; /* Duplicate D0 x E0. */
+    approve_test_map(&invalid, "BAD-MAP-TEST");
+    invalid.apartments[46] = invalid.apartments[0];
     CHECK(!matrix_manager_address_map_validate(&invalid));
     CHECK(matrix_manager_set_address_map(&manager, &invalid) ==
           MATRIX_MANAGER_ERR_INVALID_ARG);
@@ -180,11 +190,23 @@ static int test_invalid_or_duplicate_map_is_rejected(void)
     return 0;
 }
 
+static int test_verified_map_requires_traceability_fields(void)
+{
+    matrix_manager_address_map_t map;
+    matrix_manager_address_map_make_sequential_candidate(&map);
+    map.verified = true;
+    CHECK(!matrix_manager_address_map_validate(&map));
+    approve_test_map(&map, "REVIEW-123");
+    CHECK(matrix_manager_address_map_validate(&map));
+    return 0;
+}
+
 static int test_flat_47_maps_to_d4_e6_in_sequential_test_fixture(void)
 {
     matrix_manager_t manager;
     fake_hw_t fake;
     CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_is_ready(&manager));
     CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
     CHECK(!fake.mux_enabled && fake.d_mask == 0U);
     CHECK(fake.all_units == MATRIX_UNIT_FLOATING && !fake.drivers_enabled);
@@ -199,7 +221,6 @@ static int test_flat_47_maps_to_d4_e6_in_sequential_test_fixture(void)
     CHECK(fake.active_unit_drive == MATRIX_UNIT_LOW_SIDE);
     CHECK(fake.drivers_enabled);
 
-    /* In route setup, target mux enable must be the final hardware write. */
     CHECK(fake.ops[fake.count - 2U] == OP_MUX);
     CHECK(fake.values[fake.count - 2U] == ((4U << 1) | 1U));
     CHECK(fake.ops[fake.count - 1U] == OP_DELAY);
@@ -215,11 +236,10 @@ static int test_custom_map_can_represent_flat_47_d0_e6_report(void)
 
     matrix_manager_address_map_t map;
     matrix_manager_address_map_make_sequential_candidate(&map);
-    /* Swap two coordinates to model the unresolved bench-label alternative. */
     const matrix_manager_coordinate_t old_flat_7 = map.apartments[6];
     map.apartments[6] = map.apartments[46];
     map.apartments[46] = old_flat_7;
-    map.verified = true; /* In this test only; not a real-board approval. */
+    approve_test_map(&map, "CUSTOM-TEST-ONLY");
 
     CHECK(matrix_manager_address_map_validate(&map));
     CHECK(matrix_manager_set_address_map(&manager, &map) == MATRIX_MANAGER_OK);
@@ -282,7 +302,7 @@ static int test_reroute_enforces_break_before_make(void)
 
     fake.count = 0U;
     CHECK(matrix_manager_connect(&manager, 47U) == MATRIX_MANAGER_OK);
-    CHECK(fake.ops[0] == OP_MUX && fake.values[0] == 0U); /* Open analog gate first. */
+    CHECK(fake.ops[0] == OP_MUX && fake.values[0] == 0U);
     CHECK(fake.ops[1] == OP_D_MASK && fake.values[1] == 0U);
     CHECK(fake.ops[2] == OP_ALL_UNITS && fake.values[2] == MATRIX_UNIT_FLOATING);
     CHECK(fake.ops[3] == OP_DRIVERS && fake.values[3] == 0U);
@@ -341,6 +361,7 @@ int main(void)
 {
     CHECK(test_unverified_map_blocks_routing_without_hardware_writes() == 0);
     CHECK(test_invalid_or_duplicate_map_is_rejected() == 0);
+    CHECK(test_verified_map_requires_traceability_fields() == 0);
     CHECK(test_flat_47_maps_to_d4_e6_in_sequential_test_fixture() == 0);
     CHECK(test_custom_map_can_represent_flat_47_d0_e6_report() == 0);
     CHECK(test_disconnect_opens_gate_before_output_changes() == 0);
