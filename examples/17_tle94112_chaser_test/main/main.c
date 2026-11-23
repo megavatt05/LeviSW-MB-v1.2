@@ -106,12 +106,13 @@ static esp_err_t app_check_power(void)
     (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
     (void)levisw_bsp_vamp_read_mv(&vamp_mv);
 
-    ESP_LOGI(TAG, "Телеметрия питания: PG=%d | +POWERIN=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
+    ESP_LOGI(TAG, "Телеметрия питания: PG=%d | +Vamp=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
              pg ? 1 : 0, (float)vamp_mv / 1000.0f, v1_v, v2_v, v2_ma);
 
     if (!pg) {
-        ESP_LOGW(TAG, "ВНИМАНИЕ: Power Good = 0! Проверьте входное питание клеммника POWERIN XP4.");
+        ESP_LOGE(TAG, "Power Good = 0: силовые драйверы не должны включаться.");
         app_led_set_rgb(60, 0, 0);
+        return ESP_ERR_INVALID_STATE;
     }
     return ESP_OK;
 }
@@ -198,16 +199,19 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(50)); /* Задержка стабилизации питания DC-DC */
     ESP_LOGI(TAG, "Этап 4: Питание +V1/+V2 включено");
 
-    /* 5. Активация общей линии разрешения драйверов EN-DE = 1 (GPIO20, TP115) */
-    ESP_LOGI(TAG, "Этап 5: Активация EN-DE (GPIO20)...");
+    /* 5. До активации EN-DE проверяем PGOOD: при аварии остаёмся в безопасном состоянии. */
+    ESP_LOGI(TAG, "Этап 5: Проверка телеметрии питания до включения драйверов...");
+    esp_err_t power_err = app_check_power();
+    if (power_err != ESP_OK) {
+        ESP_LOGE(TAG, "Питание не готово (PGOOD=0). EN-DE остаётся LOW, запуск силовых выходов отменён.");
+        return;
+    }
+
+    /* 6. Активация общей линии разрешения драйверов EN-DE = 1 (GPIO20, TP115) */
+    ESP_LOGI(TAG, "Этап 6: Активация EN-DE (GPIO20)...");
     ESP_ERROR_CHECK(levisw_bsp_drivers_enable(true));
     vTaskDelay(pdMS_TO_TICKS(15)); /* Время пробуждения чипов из Sleep режима */
-    ESP_LOGI(TAG, "Этап 5: Драйверы выведены из Sleep");
-
-    /* 6. Проверка телеметрии питания */
-    ESP_LOGI(TAG, "Этап 6: Проверка телеметрии питания...");
-    app_check_power();
-    ESP_LOGI(TAG, "Этап 6: Телеметрия получена");
+    ESP_LOGI(TAG, "Этап 6: Драйверы выведены из Sleep");
 
     /* 7. Инициализация драйвера TLE94112EL через компонент tle94112.
      * Замечание: в BSP дескриптор SPI CS1=GPIO10 был добавлен при bsp_init.
