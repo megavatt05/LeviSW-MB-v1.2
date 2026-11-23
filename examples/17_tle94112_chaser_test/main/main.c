@@ -209,8 +209,9 @@ static void app_lu_decoder_task(void *pvParameters)
     (void)pvParameters;
 
     lu_event_dispatcher_stats_t stats;
-    lu_event_dispatcher_get_stats(s_lu_dispatcher, &stats);
-    uint32_t last_decoder_dropped = stats.decoder_dropped;
+    uint32_t last_decoder_dropped = 0U;
+    uint32_t last_bsp_dropped = 0U;
+    uint32_t last_bsp_read_errors = 0U;
 
     for (;;) {
         levisw_bsp_lu_event_t event;
@@ -231,12 +232,23 @@ static void app_lu_decoder_task(void *pvParameters)
         }
 
         lu_event_dispatcher_get_stats(s_lu_dispatcher, &stats);
-        if (stats.decoder_dropped != last_decoder_dropped) {
+        const uint32_t bsp_dropped = levisw_bsp_lu_event_dropped_count();
+        const bool event_stream_lost =
+            (stats.decoder_dropped != last_decoder_dropped) ||
+            (bsp_dropped != last_bsp_dropped) ||
+            (stats.bsp_read_errors != last_bsp_read_errors);
+
+        if (event_stream_lost) {
             ESP_LOGE(TAG,
-                     "Потеряно LU-событий в очереди декодера: delta=%" PRIu32
+                     "Потеря LU-потока: decoder_drop=%" PRIu32
+                     ", BSP_drop=%" PRIu32 ", read_errors=%" PRIu32
                      "; текущий номерный кадр сбрасывается",
-                     stats.decoder_dropped - last_decoder_dropped);
+                     stats.decoder_dropped - last_decoder_dropped,
+                     bsp_dropped - last_bsp_dropped,
+                     stats.bsp_read_errors - last_bsp_read_errors);
             last_decoder_dropped = stats.decoder_dropped;
+            last_bsp_dropped = bsp_dropped;
+            last_bsp_read_errors = stats.bsp_read_errors;
 
             /* После потери фронта нельзя доверять частичному номеру. */
             const int64_t resync_us = esp_timer_get_time();
