@@ -57,3 +57,8 @@ ctest --test-dir build/call_controller_tests --output-on-failure
 The tests use fake Matrix Manager hardware operations and verify the normal
 lifecycle, rejection of invalid addresses, timeouts, no rescan during TALKING,
 and fault recovery.
+
+
+The configured `ring_timeout_ms` is measured from the first transition into
+RINGING and is not extended by pickup verification retries. The answer-verification
+timeout is per PICKUP_CANDIDATE attempt.
