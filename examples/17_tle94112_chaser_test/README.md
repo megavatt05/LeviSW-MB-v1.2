@@ -109,3 +109,7 @@ cmake -S components/call_controller/tests -B build/call_controller_tests
 cmake --build build/call_controller_tests
 ctest --test-dir build/call_controller_tests --output-on-failure
 ```
+
+
+Тайм-аут разговора `ring_timeout_ms` отсчитывается от первого входа в RINGING
+и не продлевается повторными неуспешными попытками подтверждения снятия трубки.
