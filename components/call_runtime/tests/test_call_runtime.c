@@ -89,6 +89,14 @@ static int setup(call_runtime_t *runtime, matrix_manager_t *matrix, fake_hw_t *f
         return 1;
     }
 
+    /* Native fake-HW fixture only; it does not certify any physical flat wiring. */
+    matrix_manager_address_map_t test_map;
+    matrix_manager_address_map_make_sequential_candidate(&test_map);
+    test_map.verified = true;
+    if (matrix_manager_set_address_map(matrix, &test_map) != MATRIX_MANAGER_OK) {
+        return 1;
+    }
+
     call_runtime_config_t config;
     call_runtime_default_config(&config);
     config.decoder.glitch_filter_us = 120U;
