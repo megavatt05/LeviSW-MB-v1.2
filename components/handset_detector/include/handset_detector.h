@@ -40,8 +40,8 @@ typedef struct {
     handset_state_t state;
     handset_line_t line;
     bool stable_level;
-    int64_t pending_since_ms;
-    int64_t last_timestamp_ms;
+    int64_t pending_since_us;
+    int64_t last_timestamp_us;
     uint32_t rejected_pickups;
     uint32_t confirmed_pickups;
     uint32_t confirmed_hangups;
@@ -52,26 +52,22 @@ void handset_detector_default_config(handset_detector_config_t *config);
 bool handset_detector_init(handset_detector_t *detector,
                            const handset_detector_config_t *config);
 
-/*
- * Arm only after a subscriber route is connected. The current level becomes
- * the baseline; an already-active level is not accepted as a new pickup.
- */
+/* Arm only after a subscriber route is connected; current level becomes baseline. */
 bool handset_detector_arm(handset_detector_t *detector,
                           handset_line_t line,
                           bool initial_level,
-                          int64_t now_ms);
-
+                          int64_t now_us);
 void handset_detector_disarm(handset_detector_t *detector);
 
-/* Feed timestamped LU level changes. Returns at most one semantic event. */
+/* Feed timestamped LU level changes. Timestamps are monotonic microseconds. */
 handset_event_t handset_detector_feed(handset_detector_t *detector,
                                        handset_line_t line,
                                        bool level,
-                                       int64_t timestamp_ms);
+                                       int64_t timestamp_us);
 
-/* Advance pending pickup/hangup verification without requiring another edge. */
+/* Advance pickup/hangup verification without requiring another edge. */
 handset_event_t handset_detector_poll(handset_detector_t *detector,
-                                       int64_t now_ms);
+                                       int64_t now_us);
 
 handset_state_t handset_detector_get_state(const handset_detector_t *detector);
 
