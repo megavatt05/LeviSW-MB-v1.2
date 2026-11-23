@@ -95,6 +95,39 @@ with an ohmmeter.
 Use [LeviSW-MB-v1.2-apartment-map-template.csv](LeviSW-MB-v1.2-apartment-map-template.csv)
 as the editable 80-row record. All mapping cells are deliberately blank.
 
+
+## 4. Strict map generation from the commissioning record
+
+Complete all 80 rows in
+[LeviSW-MB-v1.2-apartment-map-template.csv](LeviSW-MB-v1.2-apartment-map-template.csv).
+For each apartment, enter the D/E coordinate measured on the actual unpowered
+harness, the corresponding test point and physical connector pins. Confirm
+continuity and enter the same controlled commissioning metadata on every row:
+operator, independent reviewer, ISO date, PCB revision, harness revision and
+commissioning record ID.
+
+Generate the board map from the repository root:
+
+\`\`\`sh
+python3 tools/matrix_address_map/generate_matrix_address_map.py \\
+  docs/hardware/LeviSW-MB-v1.2-apartment-map-template.csv \\
+  bsp/levisw-mb-v1.2/include/levisw_mb_v1_2_apartment_map_generated.h
+\`\`\`
+
+The generator rejects incomplete rows, incorrect D/E test-point numbers,
+duplicate coordinates, missing continuity confirmations, inconsistent
+commissioning metadata, missing connector pin references, invalid dates, or
+the same person acting as operator and reviewer. Only a successful validation
+produces a C map with verified=true and traceability metadata. The generated
+header is an engineering-controlled artifact: review it, commit it, and include
+the commissioning record in the hardware release package.
+
+A successful script run validates the entered record's consistency; it does
+not itself perform a continuity measurement or prove that the CSV entries are
+true. Never use sample/test data or a sequential candidate for a physical
+board. Firmware routing remains fail-closed until the approved generated map
+is installed.
+
 ## 5. Powered output verification — separate approval
 
 After passive continuity checks and map review, test the driver stages without
