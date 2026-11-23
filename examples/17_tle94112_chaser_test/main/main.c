@@ -129,6 +129,7 @@ static void app_lu_event_monitor_task(void *pvParameters)
              lines[0].stable_level, lines[1].stable_level);
 
     uint32_t last_dropped = levisw_bsp_lu_event_dropped_count();
+    uint32_t last_monitor_dropped = 0U;
 
     for (;;) {
         uint32_t timeout_ms = 1000U;
@@ -179,10 +180,17 @@ static void app_lu_event_monitor_task(void *pvParameters)
         }
 
         const uint32_t dropped = levisw_bsp_lu_event_dropped_count();
-        if (dropped != last_dropped) {
-            ESP_LOGW(TAG, "Очередь LU переполнена: потеряно событий=%" PRIu32
-                          "; синхронизируем уровни по GPIO", dropped);
+        lu_event_dispatcher_stats_t dispatch_stats;
+        lu_event_dispatcher_get_stats(s_lu_dispatcher, &dispatch_stats);
+        if ((dropped != last_dropped) ||
+            (dispatch_stats.monitor_dropped != last_monitor_dropped)) {
+            ESP_LOGW(TAG,
+                     "Потеря событий LU: BSP dropped=%" PRIu32
+                     ", monitor dropped=%" PRIu32 "; синхронизация по GPIO",
+                     dropped - last_dropped,
+                     dispatch_stats.monitor_dropped - last_monitor_dropped);
             last_dropped = dropped;
+            last_monitor_dropped = dispatch_stats.monitor_dropped;
 
             /* Восстанавливаем текущее состояние, если из-за переполнения потерян последний фронт. */
             const bool current_levels[2] = {
