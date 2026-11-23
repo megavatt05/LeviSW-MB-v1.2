@@ -98,7 +98,7 @@ static void fake_delay(void *ctx, uint32_t delay_us)
     record(hw, OP_DELAY, delay_us);
 }
 
-static int setup(matrix_manager_t *manager, fake_hw_t *fake)
+static int setup_unmapped(matrix_manager_t *manager, fake_hw_t *fake)
 {
     matrix_manager_hw_ops_t hw = {
         .context = fake,
@@ -119,7 +119,68 @@ static int setup(matrix_manager_t *manager, fake_hw_t *fake)
     return (int)matrix_manager_init(manager, &hw, &config);
 }
 
-static int test_flat_47_maps_to_d4_e6(void)
+static int install_sequential_test_map(matrix_manager_t *manager)
+{
+    matrix_manager_address_map_t map;
+    matrix_manager_address_map_make_sequential_candidate(&map);
+    /* Test fixture only. This does not certify the physical apartment wiring. */
+    map.verified = true;
+    return (int)matrix_manager_set_address_map(manager, &map);
+}
+
+static int setup(matrix_manager_t *manager, fake_hw_t *fake)
+{
+    if (setup_unmapped(manager, fake) != MATRIX_MANAGER_OK) {
+        return MATRIX_MANAGER_ERR_INVALID_STATE;
+    }
+    return install_sequential_test_map(manager);
+}
+
+static int test_unverified_map_blocks_routing_without_hardware_writes(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup_unmapped(&manager, &fake) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+
+    CHECK(matrix_manager_connect(&manager, 47U) ==
+          MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED);
+
+    matrix_manager_address_map_t candidate;
+    matrix_manager_address_map_make_sequential_candidate(&candidate);
+    CHECK(matrix_manager_address_map_validate(&candidate));
+    CHECK(!candidate.verified);
+    CHECK(matrix_manager_set_address_map(&manager, &candidate) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_connect(&manager, 47U) ==
+          MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED);
+
+    CHECK(fake.count == 0U);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
+    CHECK(matrix_manager_get_active_apartment(&manager) == 0U);
+    return 0;
+}
+
+static int test_invalid_or_duplicate_map_is_rejected(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup_unmapped(&manager, &fake) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+
+    matrix_manager_address_map_t invalid;
+    matrix_manager_address_map_make_sequential_candidate(&invalid);
+    invalid.verified = true;
+    invalid.apartments[46] = invalid.apartments[0]; /* Duplicate D0 x E0. */
+    CHECK(!matrix_manager_address_map_validate(&invalid));
+    CHECK(matrix_manager_set_address_map(&manager, &invalid) ==
+          MATRIX_MANAGER_ERR_INVALID_ARG);
+    CHECK(matrix_manager_connect(&manager, 47U) ==
+          MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED);
+    CHECK(fake.count == 0U);
+    return 0;
+}
+
+static int test_flat_47_maps_to_d4_e6_in_sequential_test_fixture(void)
 {
     matrix_manager_t manager;
     fake_hw_t fake;
@@ -146,6 +207,30 @@ static int test_flat_47_maps_to_d4_e6(void)
     return 0;
 }
 
+static int test_custom_map_can_represent_flat_47_d0_e6_report(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup_unmapped(&manager, &fake) == MATRIX_MANAGER_OK);
+
+    matrix_manager_address_map_t map;
+    matrix_manager_address_map_make_sequential_candidate(&map);
+    /* Swap two coordinates to model the unresolved bench-label alternative. */
+    const matrix_manager_coordinate_t old_flat_7 = map.apartments[6];
+    map.apartments[6] = map.apartments[46];
+    map.apartments[46] = old_flat_7;
+    map.verified = true; /* In this test only; not a real-board approval. */
+
+    CHECK(matrix_manager_address_map_validate(&map));
+    CHECK(matrix_manager_set_address_map(&manager, &map) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 47U) == MATRIX_MANAGER_OK);
+    CHECK(fake.mux_enabled && fake.mux_decade == 0U);
+    CHECK(fake.d_mask == 0x01U);
+    CHECK(fake.active_unit == 6U);
+    return 0;
+}
+
 static int test_disconnect_opens_gate_before_output_changes(void)
 {
     matrix_manager_t manager;
@@ -165,7 +250,6 @@ static int test_disconnect_opens_gate_before_output_changes(void)
     CHECK(fake.ops[3] == OP_DRIVERS);
     return 0;
 }
-
 
 static int test_all_80_addresses_map_to_one_d_and_one_e(void)
 {
@@ -255,7 +339,10 @@ static int test_fault_recovery_requires_successful_safe_off(void)
 
 int main(void)
 {
-    CHECK(test_flat_47_maps_to_d4_e6() == 0);
+    CHECK(test_unverified_map_blocks_routing_without_hardware_writes() == 0);
+    CHECK(test_invalid_or_duplicate_map_is_rejected() == 0);
+    CHECK(test_flat_47_maps_to_d4_e6_in_sequential_test_fixture() == 0);
+    CHECK(test_custom_map_can_represent_flat_47_d0_e6_report() == 0);
     CHECK(test_disconnect_opens_gate_before_output_changes() == 0);
     CHECK(test_all_80_addresses_map_to_one_d_and_one_e() == 0);
     CHECK(test_reroute_enforces_break_before_make() == 0);
