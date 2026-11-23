@@ -48,6 +48,7 @@ typedef struct {
     int64_t last_input_timestamp_us;
     bool burst_active;
     bool burst_malformed;
+    bool desynchronized;
     uint16_t burst_edge_count;
     int64_t last_valid_edge_us;
 } lu_decoder_line_state_t;
