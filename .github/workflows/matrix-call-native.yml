@@ -8,11 +8,13 @@ on:
     paths:
       - "components/matrix_manager/**"
       - "components/call_controller/**"
+      - "tools/matrix_address_map/**"
       - ".github/workflows/matrix-call-native.yml"
   pull_request:
     paths:
       - "components/matrix_manager/**"
       - "components/call_controller/**"
+      - "tools/matrix_address_map/**"
       - ".github/workflows/matrix-call-native.yml"
   workflow_dispatch:
 
@@ -23,6 +25,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Validate matrix address-map generator
+        run: python3 -m unittest discover -s tools/matrix_address_map/tests -v
 
       - name: Test Matrix Manager
         run: |
