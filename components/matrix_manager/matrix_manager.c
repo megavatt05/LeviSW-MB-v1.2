@@ -8,6 +8,59 @@ static matrix_manager_status_t remember_first(matrix_manager_status_t first,
     return (first == MATRIX_MANAGER_OK) ? next : first;
 }
 
+void matrix_manager_address_map_make_sequential_candidate(
+    matrix_manager_address_map_t *map)
+{
+    if (map == NULL) {
+        return;
+    }
+
+    memset(map, 0, sizeof(*map));
+    map->version = MATRIX_MANAGER_ADDRESS_MAP_VERSION;
+    map->verified = false;
+
+    for (uint8_t apartment = 1U; apartment <= MATRIX_MANAGER_FLAT_COUNT; ++apartment) {
+        const uint8_t index = (uint8_t)(apartment - 1U);
+        map->apartments[index].decade =
+            (uint8_t)(index / MATRIX_MANAGER_UNIT_COUNT);
+        map->apartments[index].unit =
+            (uint8_t)(index % MATRIX_MANAGER_UNIT_COUNT);
+    }
+}
+
+bool matrix_manager_address_map_validate(const matrix_manager_address_map_t *map)
+{
+    if ((map == NULL) || (map->version != MATRIX_MANAGER_ADDRESS_MAP_VERSION)) {
+        return false;
+    }
+
+    uint16_t used[MATRIX_MANAGER_DOZEN_COUNT] = {0U};
+
+    for (size_t i = 0U; i < MATRIX_MANAGER_FLAT_COUNT; ++i) {
+        const uint8_t decade = map->apartments[i].decade;
+        const uint8_t unit = map->apartments[i].unit;
+
+        if ((decade >= MATRIX_MANAGER_DOZEN_COUNT) ||
+            (unit >= MATRIX_MANAGER_UNIT_COUNT)) {
+            return false;
+        }
+
+        const uint16_t bit = (uint16_t)(1U << unit);
+        if ((used[decade] & bit) != 0U) {
+            return false;
+        }
+        used[decade] = (uint16_t)(used[decade] | bit);
+    }
+
+    for (size_t decade = 0U; decade < MATRIX_MANAGER_DOZEN_COUNT; ++decade) {
+        if (used[decade] != 0x03FFU) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static matrix_manager_status_t safe_open_once(matrix_manager_t *manager)
 {
     matrix_manager_status_t result = MATRIX_MANAGER_OK;
@@ -81,6 +134,23 @@ matrix_manager_status_t matrix_manager_init(matrix_manager_t *manager,
     return MATRIX_MANAGER_OK;
 }
 
+matrix_manager_status_t matrix_manager_set_address_map(
+    matrix_manager_t *manager,
+    const matrix_manager_address_map_t *map)
+{
+    if ((manager == NULL) || !manager->initialized ||
+        (manager->state != MATRIX_MANAGER_STATE_OPEN)) {
+        return MATRIX_MANAGER_ERR_INVALID_STATE;
+    }
+    if (!matrix_manager_address_map_validate(map)) {
+        return MATRIX_MANAGER_ERR_INVALID_ARG;
+    }
+
+    manager->address_map = *map;
+    manager->address_map_loaded = true;
+    return MATRIX_MANAGER_OK;
+}
+
 matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
                                                 uint8_t apartment)
 {
@@ -92,6 +162,9 @@ matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
     }
     if (manager->state == MATRIX_MANAGER_STATE_FAULT) {
         return MATRIX_MANAGER_ERR_FAULT;
+    }
+    if (!manager->address_map_loaded || !manager->address_map.verified) {
+        return MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED;
     }
     if ((manager->state == MATRIX_MANAGER_STATE_CONNECTED) &&
         (manager->active_apartment == apartment)) {
@@ -106,9 +179,10 @@ matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
 
     manager->hw.delay_us(manager->hw.context, manager->config.break_before_make_us);
 
-    const uint8_t zero_based = (uint8_t)(apartment - 1U);
-    const uint8_t decade = (uint8_t)(zero_based / MATRIX_MANAGER_UNIT_COUNT);
-    const uint8_t unit = (uint8_t)(zero_based % MATRIX_MANAGER_UNIT_COUNT);
+    const matrix_manager_coordinate_t coordinate =
+        manager->address_map.apartments[(size_t)(apartment - 1U)];
+    const uint8_t decade = coordinate.decade;
+    const uint8_t unit = coordinate.unit;
     const uint8_t d_mask = (uint8_t)(1U << decade);
 
     /* Wake the drivers while all routes remain physically open. */
