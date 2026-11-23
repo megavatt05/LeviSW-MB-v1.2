@@ -1,0 +1,219 @@
+#include "matrix_manager.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define CHECK(expr) do { \
+    if (!(expr)) { \
+        fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #expr); \
+        return 1; \
+    } \
+} while (0)
+
+typedef enum {
+    OP_MUX = 1, OP_D_MASK, OP_ALL_UNITS, OP_UNIT, OP_DRIVERS, OP_DELAY
+} operation_t;
+
+typedef struct {
+    operation_t ops[256];
+    uint32_t values[256];
+    size_t count;
+    operation_t fail_operation;
+    bool fail_once;
+    bool mux_enabled;
+    uint8_t mux_decade;
+    uint8_t d_mask;
+    matrix_unit_drive_t all_units;
+    uint8_t active_unit;
+    matrix_unit_drive_t active_unit_drive;
+    bool drivers_enabled;
+} fake_hw_t;
+
+static void record(fake_hw_t *hw, operation_t op, uint32_t value)
+{
+    if (hw->count < (sizeof(hw->ops) / sizeof(hw->ops[0]))) {
+        hw->ops[hw->count] = op;
+        hw->values[hw->count] = value;
+        hw->count++;
+    }
+}
+
+static matrix_manager_status_t maybe_fail(fake_hw_t *hw, operation_t op)
+{
+    if (hw->fail_once && (hw->fail_operation == op)) {
+        hw->fail_once = false;
+        return MATRIX_MANAGER_ERR_IO;
+    }
+    return MATRIX_MANAGER_OK;
+}
+
+static matrix_manager_status_t fake_mux(void *ctx, uint8_t decade, bool enabled)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_MUX, ((uint32_t)decade << 1) | (enabled ? 1U : 0U));
+    hw->mux_decade = decade;
+    hw->mux_enabled = enabled;
+    return maybe_fail(hw, OP_MUX);
+}
+
+static matrix_manager_status_t fake_d(void *ctx, uint8_t mask)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_D_MASK, mask);
+    hw->d_mask = mask;
+    return maybe_fail(hw, OP_D_MASK);
+}
+
+static matrix_manager_status_t fake_all_units(void *ctx, matrix_unit_drive_t drive)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_ALL_UNITS, (uint32_t)drive);
+    hw->all_units = drive;
+    if (drive == MATRIX_UNIT_FLOATING) {
+        hw->active_unit_drive = MATRIX_UNIT_FLOATING;
+    }
+    return maybe_fail(hw, OP_ALL_UNITS);
+}
+
+static matrix_manager_status_t fake_unit(void *ctx, uint8_t unit, matrix_unit_drive_t drive)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_UNIT, ((uint32_t)unit << 8) | (uint32_t)drive);
+    hw->active_unit = unit;
+    hw->active_unit_drive = drive;
+    return maybe_fail(hw, OP_UNIT);
+}
+
+static matrix_manager_status_t fake_drivers(void *ctx, bool enabled)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_DRIVERS, enabled ? 1U : 0U);
+    hw->drivers_enabled = enabled;
+    return maybe_fail(hw, OP_DRIVERS);
+}
+
+static void fake_delay(void *ctx, uint32_t delay_us)
+{
+    fake_hw_t *hw = ctx;
+    record(hw, OP_DELAY, delay_us);
+}
+
+static int setup(matrix_manager_t *manager, fake_hw_t *fake)
+{
+    matrix_manager_hw_ops_t hw = {
+        .context = fake,
+        .set_mux = fake_mux,
+        .set_d_mask = fake_d,
+        .set_all_units = fake_all_units,
+        .set_unit = fake_unit,
+        .set_drivers_enabled = fake_drivers,
+        .delay_us = fake_delay,
+    };
+    matrix_manager_config_t config;
+    matrix_manager_default_config(&config);
+    config.active_unit_drive = MATRIX_UNIT_LOW_SIDE;
+    config.break_before_make_us = 150U;
+    config.driver_wakeup_us = 15000U;
+    config.route_settle_us = 500U;
+    memset(fake, 0, sizeof(*fake));
+    return (int)matrix_manager_init(manager, &hw, &config);
+}
+
+static int test_flat_47_maps_to_d4_e6(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
+    CHECK(!fake.mux_enabled && fake.d_mask == 0U);
+    CHECK(fake.all_units == MATRIX_UNIT_FLOATING && !fake.drivers_enabled);
+
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 47U) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_CONNECTED);
+    CHECK(matrix_manager_get_active_apartment(&manager) == 47U);
+    CHECK(fake.mux_enabled && fake.mux_decade == 4U);
+    CHECK(fake.d_mask == (1U << 4));
+    CHECK(fake.active_unit == 6U);
+    CHECK(fake.active_unit_drive == MATRIX_UNIT_LOW_SIDE);
+    CHECK(fake.drivers_enabled);
+
+    /* In route setup, target mux enable must be the final hardware write. */
+    CHECK(fake.ops[fake.count - 1U] == OP_MUX);
+    CHECK(fake.values[fake.count - 1U] == ((4U << 1) | 1U));
+    return 0;
+}
+
+static int test_disconnect_opens_gate_before_output_changes(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_connect(&manager, 80U) == MATRIX_MANAGER_OK);
+
+    fake.count = 0U;
+    CHECK(matrix_manager_disconnect(&manager) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
+    CHECK(matrix_manager_get_active_apartment(&manager) == 0U);
+    CHECK(!fake.mux_enabled && fake.d_mask == 0U);
+    CHECK(fake.all_units == MATRIX_UNIT_FLOATING && !fake.drivers_enabled);
+    CHECK(fake.ops[0] == OP_MUX);
+    CHECK(fake.ops[1] == OP_D_MASK);
+    CHECK(fake.ops[2] == OP_ALL_UNITS);
+    CHECK(fake.ops[3] == OP_DRIVERS);
+    return 0;
+}
+
+static int test_invalid_apartment_does_not_touch_hardware(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 0U) == MATRIX_MANAGER_ERR_INVALID_ARG);
+    CHECK(matrix_manager_connect(&manager, 81U) == MATRIX_MANAGER_ERR_INVALID_ARG);
+    CHECK(fake.count == 0U);
+    return 0;
+}
+
+static int test_failure_latches_fault_and_attempts_safe_off(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+    fake.fail_operation = OP_UNIT;
+    fake.fail_once = true;
+
+    CHECK(matrix_manager_connect(&manager, 23U) == MATRIX_MANAGER_ERR_FAULT);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_FAULT);
+    CHECK(matrix_manager_get_active_apartment(&manager) == 0U);
+    CHECK(!fake.mux_enabled && fake.d_mask == 0U);
+    CHECK(fake.all_units == MATRIX_UNIT_FLOATING && !fake.drivers_enabled);
+    CHECK(matrix_manager_connect(&manager, 23U) == MATRIX_MANAGER_ERR_FAULT);
+    return 0;
+}
+
+static int test_fault_recovery_requires_successful_safe_off(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_emergency_stop(&manager) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_FAULT);
+    CHECK(matrix_manager_recover(&manager) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
+    CHECK(matrix_manager_is_ready(&manager));
+    return 0;
+}
+
+int main(void)
+{
+    CHECK(test_flat_47_maps_to_d4_e6() == 0);
+    CHECK(test_disconnect_opens_gate_before_output_changes() == 0);
+    CHECK(test_invalid_apartment_does_not_touch_hardware() == 0);
+    CHECK(test_failure_latches_fault_and_attempts_safe_off() == 0);
+    CHECK(test_fault_recovery_requires_successful_safe_off() == 0);
+    puts("All matrix manager tests passed.");
+    return 0;
+}
