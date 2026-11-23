@@ -70,6 +70,7 @@ typedef struct {
     call_state_t state;
     uint8_t apartment;
     uint64_t state_started_ms;
+    uint64_t ring_started_ms;
     call_controller_status_t last_error;
     bool initialized;
 } call_controller_t;
