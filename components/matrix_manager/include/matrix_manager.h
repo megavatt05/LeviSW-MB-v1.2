@@ -13,6 +13,9 @@ extern "C" {
 #define MATRIX_MANAGER_UNIT_COUNT 10U
 #define MATRIX_MANAGER_ADDRESS_MAP_VERSION 1U
 
+#define MATRIX_MANAGER_REVISION_TEXT_LEN 16U
+#define MATRIX_MANAGER_RECORD_TEXT_LEN 48U
+
 typedef enum {
     MATRIX_MANAGER_OK = 0,
     MATRIX_MANAGER_ERR_INVALID_ARG = -1,
@@ -35,7 +38,6 @@ typedef enum {
     MATRIX_MANAGER_STATE_FAULT,
 } matrix_manager_state_t;
 
-/* Physical crosspoint coordinate for one apartment: D0..D7 and E0..E9. */
 typedef struct {
     uint8_t decade;
     uint8_t unit;
@@ -45,12 +47,16 @@ typedef struct {
  * Board-specific apartment map.
  *
  * verified is a commissioning approval flag, not an automatic hardware
- * measurement. Set it true only after all apartment contacts have been
- * traced against the current board/harness revision and independently checked.
+ * measurement. A verified map must identify the PCB revision, harness
+ * revision and a controlled commissioning record. The record should include
+ * continuity evidence and independent review.
  */
 typedef struct {
     uint8_t version;
     bool verified;
+    char pcb_revision[MATRIX_MANAGER_REVISION_TEXT_LEN];
+    char harness_revision[MATRIX_MANAGER_REVISION_TEXT_LEN];
+    char commissioning_record[MATRIX_MANAGER_RECORD_TEXT_LEN];
     matrix_manager_coordinate_t apartments[MATRIX_MANAGER_FLAT_COUNT];
 } matrix_manager_address_map_t;
 
@@ -62,18 +68,9 @@ typedef struct {
 void matrix_manager_address_map_make_sequential_candidate(
     matrix_manager_address_map_t *map);
 
-/* Validate format, D/E ranges, and one-to-one use of all 80 crosspoints. */
+/* Validate format, identity metadata, D/E ranges, and unique crosspoints. */
 bool matrix_manager_address_map_validate(const matrix_manager_address_map_t *map);
 
-/*
- * Hardware adapter contract:
- * - set_mux(decade, false) selects the address while keeping ADG1608 disconnected.
- * - set_d_mask() drives MC33879A OUT1..OUT8; bit n selects Dn.
- * - set_all_units(FLOATING) leaves every TLE94112 output high impedance.
- * - set_unit() addresses E0..E9 (0-based); adapter performs the non-linear HB map.
- * - set_unit() and set_d_mask() must report SPI/diagnostic failures, not just enqueue.
- * - delay_us() must be a monotonic blocking delay suitable for the adapter's context.
- */
 typedef struct {
     void *context;
     matrix_manager_status_t (*set_mux)(void *context, uint8_t decade, bool enable);
@@ -96,7 +93,7 @@ typedef struct {
     matrix_manager_config_t config;
     matrix_manager_address_map_t address_map;
     matrix_manager_state_t state;
-    uint8_t active_apartment; /* 0 means no active route; otherwise 1..80. */
+    uint8_t active_apartment;
     matrix_manager_status_t last_fault;
     bool address_map_loaded;
     bool initialized;
@@ -109,29 +106,22 @@ matrix_manager_status_t matrix_manager_init(matrix_manager_t *manager,
                                              const matrix_manager_hw_ops_t *hw,
                                              const matrix_manager_config_t *config);
 
-/*
- * Install a validated board map while the matrix is OPEN.
- * Unverified maps may be installed for inspection but cannot be routed.
- */
+/* Install a validated board map while OPEN. Unverified maps cannot be routed. */
 matrix_manager_status_t matrix_manager_set_address_map(
     matrix_manager_t *manager,
     const matrix_manager_address_map_t *map);
 
-/* Route one apartment (1..80). Requires an installed map with verified=true. */
+/* Route one apartment (1..80). Requires a verified map with traceability metadata. */
 matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
                                                 uint8_t apartment);
 
-/* Open the crosspoint and leave all D/E outputs disabled. */
 matrix_manager_status_t matrix_manager_disconnect(matrix_manager_t *manager);
-
-/* Best-effort immediate safe-off; latches FAULT even if all off commands succeed. */
 matrix_manager_status_t matrix_manager_emergency_stop(matrix_manager_t *manager);
-
-/* Clear a latched fault only after all safe-off commands succeed. */
 matrix_manager_status_t matrix_manager_recover(matrix_manager_t *manager);
 
 matrix_manager_state_t matrix_manager_get_state(const matrix_manager_t *manager);
 uint8_t matrix_manager_get_active_apartment(const matrix_manager_t *manager);
+/* True only when the matrix is open/connected AND a verified address map is loaded. */
 bool matrix_manager_is_ready(const matrix_manager_t *manager);
 
 #ifdef __cplusplus
