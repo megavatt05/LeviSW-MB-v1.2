@@ -173,10 +173,9 @@ static esp_err_t add_i2c_device(uint16_t addr, i2c_master_dev_handle_t *out_dev)
 
 static esp_err_t init_gpio(void)
 {
-    /* Выходы управления: EN-DE = 0 (драйверы D1/D2 отключены), RS-ON = 1 (ожидание/подтяжка) */
-    gpio_set_level(LEVISW_PIN_SPI_EN2_DRIVERS, 0);
-    gpio_set_level(LEVISW_PIN_RS_ON, 1);
-
+    /* Сначала конфигурируем GPIO как выходы, затем задаём безопасные уровни.
+     * EN-DE=0 отключает силовые драйверы; RS-ON=0 удерживает MAX13487 в shutdown.
+     * GPIO27 имеет общие цепи BUTTON/D8-A5 — активировать RS-485 следует явно из приложения. */
     gpio_config_t out_cfg = {
         .pin_bit_mask = (1ULL << LEVISW_PIN_SPI_EN2_DRIVERS) |
                         (1ULL << LEVISW_PIN_RS_ON),
@@ -186,6 +185,10 @@ static esp_err_t init_gpio(void)
         .intr_type    = GPIO_INTR_DISABLE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&out_cfg), TAG, "Ошибка настройки выходных GPIO");
+    ESP_RETURN_ON_ERROR(gpio_set_level(LEVISW_PIN_SPI_EN2_DRIVERS, 0),
+                        TAG, "Не удалось удержать EN-DE в LOW");
+    ESP_RETURN_ON_ERROR(gpio_set_level(LEVISW_PIN_RS_ON, 0),
+                        TAG, "Не удалось удержать RS-ON в LOW");
 
     /* Входы детекции линий трубок LU1/LU2 и линии прерываний I2C */
     gpio_config_t in_cfg = {
