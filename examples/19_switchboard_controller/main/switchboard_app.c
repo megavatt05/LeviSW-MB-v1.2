@@ -38,6 +38,7 @@
 
 static const char *TAG = "SWITCHBOARD";
 
+#if !CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
 typedef struct {
     bool mux_enabled;
     uint8_t decade;
@@ -46,10 +47,12 @@ typedef struct {
     matrix_unit_drive_t unit_drive;
     bool drivers_enabled;
 } simulated_matrix_t;
+static simulated_matrix_t s_simulated_matrix;
+#endif
 
 static switchboard_app_t s_app;
-static simulated_matrix_t s_simulated_matrix;
 
+#if !CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
 static matrix_manager_status_t simulated_set_mux(void *context,
                                                   uint8_t decade,
                                                   bool enable)
@@ -113,6 +116,8 @@ static void simulated_delay(void *context, uint32_t delay_us)
     (void)delay_us;
 }
 
+#endif
+
 static void call_state_changed(void *context,
                                call_state_t previous,
                                call_state_t current,
@@ -143,6 +148,7 @@ static void call_state_changed(void *context,
     }
 }
 
+#if !CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
 static esp_err_t initialize_simulated_matrix(void)
 {
     matrix_manager_hw_ops_t ops = {
@@ -190,6 +196,8 @@ static esp_err_t initialize_simulated_matrix(void)
              "EN-DE и выходы матрицы не включаются.");
     return ESP_OK;
 }
+
+#endif
 
 #if CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
 static void physical_best_effort_shutdown(void)
@@ -532,9 +540,11 @@ static void monitor_task(void *argument)
 
 static void supervisor_task(void *argument)
 {
-    switchboard_app_t *app = (switchboard_app_t *)argument;
 #if CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
+    switchboard_app_t *app = (switchboard_app_t *)argument;
     bool fault_already_queued = false;
+#else
+    (void)argument;
 #endif
 
     for (;;) {

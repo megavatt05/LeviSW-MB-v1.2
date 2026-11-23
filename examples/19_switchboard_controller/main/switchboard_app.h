@@ -8,6 +8,7 @@
 #include "freertos/queue.h"
 
 #include "call_runtime.h"
+#include "lu_event_dispatcher.h"
 #include "levisw_mb_v1_2_bsp.h"
 #include "matrix_manager_espidf.h"
 
