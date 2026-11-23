@@ -139,8 +139,10 @@ static int test_flat_47_maps_to_d4_e6(void)
     CHECK(fake.drivers_enabled);
 
     /* In route setup, target mux enable must be the final hardware write. */
-    CHECK(fake.ops[fake.count - 1U] == OP_MUX);
-    CHECK(fake.values[fake.count - 1U] == ((4U << 1) | 1U));
+    CHECK(fake.ops[fake.count - 2U] == OP_MUX);
+    CHECK(fake.values[fake.count - 2U] == ((4U << 1) | 1U));
+    CHECK(fake.ops[fake.count - 1U] == OP_DELAY);
+    CHECK(fake.values[fake.count - 1U] == 500U);
     return 0;
 }
 
