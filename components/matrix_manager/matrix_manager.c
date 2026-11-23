@@ -146,6 +146,7 @@ matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
     if (status != MATRIX_MANAGER_OK) {
         return latch_fault(manager, status);
     }
+    manager->hw.delay_us(manager->hw.context, manager->config.route_settle_us);
 
     manager->active_apartment = apartment;
     manager->state = MATRIX_MANAGER_STATE_CONNECTED;
