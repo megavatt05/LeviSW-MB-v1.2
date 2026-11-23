@@ -38,12 +38,17 @@
 #include "levisw_mb_v1_2_bsp.h"
 #include "tle94112.h"
 #include "mc33879a.h"
+#include "lu_event_dispatcher.h"
+#include "lu_decoder.h"
 
 static const char *TAG = "TLE_CHASER_TEST";
 
 static led_strip_handle_t s_led_strip = NULL;
 static tle94112_handle_t s_tle_handle = NULL;
 static mc33879a_handle_t s_mc33879;
+static lu_event_dispatcher_handle_t s_lu_dispatcher = NULL;
+static lu_decoder_t s_lu_decoder;
+static lu_decoder_config_t s_lu_decoder_config;
 
 /* --------------------------------------------------------------------------
  * Структура соответствия линий E0..E9 клеммника XP3 и полумостов TLE94112EL
@@ -142,14 +147,14 @@ static void app_lu_event_monitor_task(void *pvParameters)
         }
 
         levisw_bsp_lu_event_t event;
-        esp_err_t err = levisw_bsp_lu_event_receive(&event, timeout_ms);
+        esp_err_t err = lu_event_dispatcher_monitor_receive(s_lu_dispatcher, &event, timeout_ms);
         if (err == ESP_OK) {
             do {
                 const size_t index = (event.line == LEVISW_LU_LINE_1) ? 0U : 1U;
                 lines[index].candidate_level = event.level;
                 lines[index].candidate_since_us = event.timestamp_us;
                 lines[index].pending = true;
-            } while (levisw_bsp_lu_event_receive(&event, 0U) == ESP_OK);
+            } while (lu_event_dispatcher_monitor_receive(s_lu_dispatcher, &event, 0U) == ESP_OK);
         } else if (err != ESP_ERR_TIMEOUT) {
             ESP_LOGE(TAG, "Ошибка очереди LU: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -189,6 +194,76 @@ static void app_lu_event_monitor_task(void *pvParameters)
                 lines[i].candidate_level = current_levels[i];
                 lines[i].candidate_since_us = resync_us;
                 lines[i].pending = (current_levels[i] != lines[i].stable_level);
+            }
+        }
+    }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Независимый декодер LU: принимает только копию raw-событий от dispatcher.
+ * Никаких GPIO/FreeRTOS зависимостей внутри lu_decoder.c нет.
+ * ------------------------------------------------------------------------ */
+static void app_lu_decoder_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    lu_event_dispatcher_stats_t stats;
+    lu_event_dispatcher_get_stats(s_lu_dispatcher, &stats);
+    uint32_t last_decoder_dropped = stats.decoder_dropped;
+
+    for (;;) {
+        levisw_bsp_lu_event_t event;
+        const esp_err_t err = lu_event_dispatcher_decoder_receive(
+            s_lu_dispatcher, &event, 20U);
+
+        if (err == ESP_OK) {
+            const lu_decoder_edge_t edge = {
+                .line = (event.line == LEVISW_LU_LINE_1)
+                      ? LU_DECODER_LINE_1 : LU_DECODER_LINE_2,
+                .level = event.level,
+                .timestamp_us = event.timestamp_us,
+            };
+            lu_decoder_feed(&s_lu_decoder, &edge);
+        } else if (err != ESP_ERR_TIMEOUT) {
+            ESP_LOGE(TAG, "LU decoder queue error: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
+        lu_event_dispatcher_get_stats(s_lu_dispatcher, &stats);
+        if (stats.decoder_dropped != last_decoder_dropped) {
+            ESP_LOGE(TAG,
+                     "Потеряно LU-событий в очереди декодера: delta=%" PRIu32
+                     "; текущий номерный кадр сбрасывается",
+                     stats.decoder_dropped - last_decoder_dropped);
+            last_decoder_dropped = stats.decoder_dropped;
+
+            /* После потери фронта нельзя доверять частичному номеру. */
+            const int64_t resync_us = esp_timer_get_time();
+            (void)lu_decoder_init(&s_lu_decoder, &s_lu_decoder_config);
+            (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_1,
+                                             levisw_bsp_lu1_read(), resync_us);
+            (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_2,
+                                             levisw_bsp_lu2_read(), resync_us);
+        }
+
+        lu_decoder_poll(&s_lu_decoder, esp_timer_get_time());
+
+        lu_decoder_result_t result;
+        while (lu_decoder_result_pop(&s_lu_decoder, &result)) {
+            if (result.valid) {
+                ESP_LOGI(TAG,
+                         "LU%u: кандидат номера квартиры %u "
+                         "(qualified edges=%u, burst complete)",
+                         (unsigned)(result.line + 1U),
+                         (unsigned)result.apartment,
+                         (unsigned)result.edge_count);
+            } else {
+                ESP_LOGW(TAG,
+                         "LU%u: отклонённый номерный пакет "
+                         "(qualified edges=%u)",
+                         (unsigned)(result.line + 1U),
+                         (unsigned)result.edge_count);
             }
         }
     }
@@ -308,9 +383,53 @@ void app_main(void)
     ESP_ERROR_CHECK(levisw_bsp_init());
     ESP_LOGI(TAG, "Этап 1: BSP успешно инициализирован");
 
-    /* Отдельная задача принимает LU edge events; никаких переключений матрицы из ISR. */
-    if (xTaskCreate(app_lu_event_monitor_task, "lu_monitor", 3072, NULL, 4, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "Не удалось создать задачу мониторинга LU1/LU2; остановка теста");
+    /*
+     * Инициализация чистого LU-декодера до запуска dispatcher: начальные уровни
+     * фиксируются как базовая точка, а накопленные ранее события считаются stale.
+     * Параметры по умолчанию (120 us / 80 ms / 2 перехода на номер) предварительные.
+     */
+    lu_decoder_default_config(&s_lu_decoder_config);
+    if (!lu_decoder_init(&s_lu_decoder, &s_lu_decoder_config)) {
+        ESP_LOGE(TAG, "Некорректная конфигурация LU decoder");
+        (void)levisw_bsp_deinit();
+        return;
+    }
+    const int64_t lu_baseline_us = esp_timer_get_time();
+    (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_1,
+                                    levisw_bsp_lu1_read(), lu_baseline_us);
+    (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_2,
+                                    levisw_bsp_lu2_read(), lu_baseline_us);
+
+    /* Единственный читатель BSP-очереди; каждое событие копируется двум подписчикам. */
+    lu_event_dispatcher_config_t dispatcher_config;
+    lu_event_dispatcher_default_config(&dispatcher_config);
+    esp_err_t dispatcher_err = lu_event_dispatcher_start(&dispatcher_config,
+                                                          &s_lu_dispatcher);
+    if (dispatcher_err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось запустить LU Event Dispatcher: %s",
+                 esp_err_to_name(dispatcher_err));
+        (void)levisw_bsp_deinit();
+        return;
+    }
+
+    TaskHandle_t lu_monitor_task_handle = NULL;
+    TaskHandle_t lu_decoder_task_handle = NULL;
+    BaseType_t monitor_created = xTaskCreate(app_lu_event_monitor_task,
+                                              "lu_monitor", 3072, NULL, 4,
+                                              &lu_monitor_task_handle);
+    BaseType_t decoder_created = xTaskCreate(app_lu_decoder_task,
+                                              "lu_decoder", 4096, NULL, 5,
+                                              &lu_decoder_task_handle);
+    if ((monitor_created != pdPASS) || (decoder_created != pdPASS)) {
+        ESP_LOGE(TAG, "Не удалось создать обе LU consumer-задачи");
+        if (lu_monitor_task_handle != NULL) {
+            vTaskDelete(lu_monitor_task_handle);
+        }
+        if (lu_decoder_task_handle != NULL) {
+            vTaskDelete(lu_decoder_task_handle);
+        }
+        (void)lu_event_dispatcher_stop(s_lu_dispatcher, 250U);
+        s_lu_dispatcher = NULL;
         (void)levisw_bsp_deinit();
         return;
     }
