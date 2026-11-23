@@ -1,0 +1,46 @@
+name: Matrix manager and call FSM native tests
+
+on:
+  push:
+    branches:
+      - master
+      - fix/safety-driver-audit
+    paths:
+      - "components/matrix_manager/**"
+      - "components/call_controller/**"
+      - ".github/workflows/matrix-call-native.yml"
+  pull_request:
+    paths:
+      - "components/matrix_manager/**"
+      - "components/call_controller/**"
+      - ".github/workflows/matrix-call-native.yml"
+  workflow_dispatch:
+
+jobs:
+  native-tests:
+    name: Build and run matrix/call native tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test Matrix Manager
+        run: |
+          cmake -S components/matrix_manager/tests -B build/matrix_manager
+          cmake --build build/matrix_manager --parallel
+          ctest --test-dir build/matrix_manager --output-on-failure
+
+      - name: Test Call Controller
+        run: |
+          cmake -S components/call_controller/tests -B build/call_controller
+          cmake --build build/call_controller --parallel
+          ctest --test-dir build/call_controller --output-on-failure
+
+      - name: Sanitizer build and tests
+        run: |
+          cmake -S components/matrix_manager/tests -B build/matrix_manager_san -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror"
+          cmake --build build/matrix_manager_san --parallel
+          ctest --test-dir build/matrix_manager_san --output-on-failure
+          cmake -S components/call_controller/tests -B build/call_controller_san -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror"
+          cmake --build build/call_controller_san --parallel
+          ctest --test-dir build/call_controller_san --output-on-failure
