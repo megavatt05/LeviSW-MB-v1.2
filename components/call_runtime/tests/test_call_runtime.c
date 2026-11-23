@@ -231,6 +231,24 @@ static int test_event_loss_during_active_call_latches_fault(void)
     return 0;
 }
 
+static int test_supervisor_hardware_fault_latches_fault(void)
+{
+    call_runtime_t runtime;
+    matrix_manager_t matrix;
+    fake_hw_t fake;
+    memset(&fake, 0, sizeof(fake));
+    CHECK(setup(&runtime, &matrix, &fake) == CALL_RUNTIME_OK);
+
+    CHECK(call_runtime_notify_hardware_fault(&runtime, 1000) ==
+          CALL_RUNTIME_ERR_FAULT);
+    CHECK(call_runtime_get_state(&runtime) == CALL_STATE_FAULT);
+    CHECK(matrix_manager_get_state(&matrix) == MATRIX_MANAGER_STATE_FAULT);
+    CHECK(matrix_manager_get_active_apartment(&matrix) == 0U);
+    CHECK(call_runtime_notify_hardware_fault(&runtime, 2000) ==
+          CALL_RUNTIME_ERR_FAULT);
+    return 0;
+}
+
 static int test_second_call_is_ignored_while_busy(void)
 {
     call_runtime_t runtime;
@@ -260,6 +278,7 @@ int main(void)
     CHECK(test_invalid_number_never_opens_matrix() == 0);
     CHECK(test_event_loss_during_active_call_latches_fault() == 0);
     CHECK(test_second_call_is_ignored_while_busy() == 0);
+    CHECK(test_supervisor_hardware_fault_latches_fault() == 0);
     puts("All call runtime tests passed.");
     return 0;
 }

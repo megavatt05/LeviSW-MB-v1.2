@@ -75,6 +75,10 @@ call_runtime_status_t call_runtime_tick(call_runtime_t *runtime, int64_t now_us)
  * Вызывать при сообщении BSP/диспетчера о потере событий. Во время активного вызова устанавливается фиксируемое состояние FAULT
  * и выполняется аварийная остановка Matrix Manager; в дежурном режиме выполняется повторная синхронизация декодера.
  */
+/* Зафиксировать аппаратную ошибку из супервизора; вызов должен выполняться из задачи Runtime. */
+call_runtime_status_t call_runtime_notify_hardware_fault(call_runtime_t *runtime,
+                                                          int64_t now_us);
+
 call_runtime_status_t call_runtime_notify_event_loss(call_runtime_t *runtime,
                                                       const bool current_levels[LU_DECODER_LINE_COUNT],
                                                       int64_t now_us);

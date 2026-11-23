@@ -1,0 +1,61 @@
+menu "LeviSW-MB v1.2 — контроллер коммутатора"
+
+config SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
+    bool "Разрешить физическое управление матрицей D/E"
+    default n
+    help
+        По умолчанию отключено. Включайте только после физической проверки
+        всех 80 точек коммутации, временных параметров, полярности, питающих
+        шин и безопасных состояний драйверов. Программная симуляция остаётся
+        режимом по умолчанию.
+
+if SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
+
+config SWITCHBOARD_HARDWARE_PROFILE_APPROVED
+    bool "Аппаратный профиль питания и полярности проверен"
+    default n
+    help
+        Явное подтверждение того, что уставки MCP4532, диапазоны INA226,
+        полярность активной линии E и поведение драйверов проверены на
+        конкретной ревизии платы с ограничением тока источников питания.
+
+config SWITCHBOARD_POWER_ON_AT_BOOT
+    bool "Разрешить включение шин +V1 и +V2 при запуске"
+    default n
+    help
+        Без этого параметра физическая матрица не запускается. При включении
+        прошивка задаёт уставки потенциометров и включает +V1/+V2. Убедитесь,
+        что источник питания ограничен по току, нагрузка отключена, а профиль
+        питания подтверждён измерениями.
+
+config SWITCHBOARD_V1_WIPER
+    int "Уставка DA2 (+V1), wiper 0..128"
+    range 0 128
+    default 2
+
+config SWITCHBOARD_V2_WIPER
+    int "Уставка DA3 (+V2), wiper 0..128"
+    range 0 128
+    default 2
+
+config SWITCHBOARD_ACTIVE_UNIT_DRIVE
+    int "Полярность активного выхода E (0=не задана, 1=LOW_SIDE, 2=HIGH_SIDE)"
+    range 0 2
+    default 0
+    help
+        Значение 0 запрещает физическую сборку. Выбирайте LOW_SIDE или
+        HIGH_SIDE только по схеме и результатам измерений конкретной платы.
+
+config SWITCHBOARD_RAIL_MIN_MV
+    int "Минимальное напряжение шин +V1/+V2, мВ"
+    range 1000 15000
+    default 6000
+
+config SWITCHBOARD_RAIL_MAX_MV
+    int "Максимальное напряжение шин +V1/+V2, мВ"
+    range 1000 20000
+    default 10000
+
+endif
+
+endmenu

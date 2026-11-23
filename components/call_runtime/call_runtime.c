@@ -291,6 +291,23 @@ call_runtime_status_t call_runtime_tick(call_runtime_t *runtime, int64_t now_us)
     return CALL_RUNTIME_OK;
 }
 
+call_runtime_status_t call_runtime_notify_hardware_fault(call_runtime_t *runtime,
+                                                          int64_t now_us)
+{
+    if ((runtime == NULL) || !runtime->initialized || (now_us < 0)) {
+        return CALL_RUNTIME_ERR_INVALID_ARG;
+    }
+    if (call_controller_get_state(&runtime->controller) == CALL_STATE_FAULT) {
+        return CALL_RUNTIME_ERR_FAULT;
+    }
+
+    const call_runtime_status_t status = send_controller_event(
+        runtime, CALL_EVENT_HARDWARE_FAULT, 0U, false, now_us);
+    handset_detector_disarm(&runtime->handset);
+    runtime->active_line_valid = false;
+    return (status == CALL_RUNTIME_ERR_FAULT) ? CALL_RUNTIME_ERR_FAULT : status;
+}
+
 call_runtime_status_t call_runtime_notify_event_loss(call_runtime_t *runtime,
                                                       const bool current_levels[LU_DECODER_LINE_COUNT],
                                                       int64_t now_us)

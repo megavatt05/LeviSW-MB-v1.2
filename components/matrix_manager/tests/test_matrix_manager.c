@@ -170,6 +170,70 @@ static int test_unverified_map_blocks_routing_without_hardware_writes(void)
     return 0;
 }
 
+static int test_default_config_is_safe_until_drive_polarity_is_selected(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake = {0};
+    matrix_manager_hw_ops_t hw = {
+        .context = &fake,
+        .set_mux = fake_mux,
+        .set_d_mask = fake_d,
+        .set_all_units = fake_all_units,
+        .set_unit = fake_unit,
+        .set_drivers_enabled = fake_drivers,
+        .delay_us = fake_delay,
+    };
+    matrix_manager_config_t config;
+    matrix_manager_default_config(&config);
+    CHECK(config.active_unit_drive == MATRIX_UNIT_FLOATING);
+    CHECK(matrix_manager_init(&manager, &hw, &config) == MATRIX_MANAGER_OK);
+
+    matrix_manager_address_map_t map;
+    matrix_manager_address_map_make_sequential_candidate(&map);
+    approve_test_map(&map, "SAFE-DEFAULT-TEST");
+    CHECK(matrix_manager_set_address_map(&manager, &map) == MATRIX_MANAGER_OK);
+
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 1U) == MATRIX_MANAGER_ERR_INVALID_STATE);
+    CHECK(fake.count == 0U);
+    CHECK(matrix_manager_get_state(&manager) == MATRIX_MANAGER_STATE_OPEN);
+
+    config.active_unit_drive = MATRIX_UNIT_LOW_SIDE;
+    memset(&fake, 0, sizeof(fake));
+    CHECK(matrix_manager_init(&manager, &hw, &config) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_set_address_map(&manager, &map) == MATRIX_MANAGER_OK);
+    fake.count = 0U;
+
+    CHECK(matrix_manager_connect(&manager, 1U) == MATRIX_MANAGER_OK);
+    /* Matrix is already known OPEN. Enable the drivers before issuing SPI writes. */
+    CHECK(fake.ops[0] == OP_DELAY);
+    CHECK(fake.ops[1] == OP_DRIVERS && fake.values[1] == 1U);
+    CHECK(fake.ops[2] == OP_DELAY);
+
+    return 0;
+}
+
+static int test_reconnect_from_open_does_not_access_disabled_drivers(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_connect(&manager, 10U) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_disconnect(&manager) == MATRIX_MANAGER_OK);
+    CHECK(!fake.drivers_enabled);
+    const size_t writes_after_disconnect = fake.count;
+    CHECK(matrix_manager_disconnect(&manager) == MATRIX_MANAGER_OK);
+    CHECK(fake.count == writes_after_disconnect);
+
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 47U) == MATRIX_MANAGER_OK);
+    CHECK(fake.ops[0] == OP_DELAY);
+    CHECK(fake.ops[1] == OP_DRIVERS && fake.values[1] == 1U);
+    CHECK(fake.ops[2] == OP_DELAY);
+    CHECK(manager.active_apartment == 47U);
+    return 0;
+}
+
 static int test_invalid_or_duplicate_map_is_rejected(void)
 {
     matrix_manager_t manager;
@@ -359,6 +423,8 @@ static int test_fault_recovery_requires_successful_safe_off(void)
 
 int main(void)
 {
+    CHECK(test_default_config_is_safe_until_drive_polarity_is_selected() == 0);
+    CHECK(test_reconnect_from_open_does_not_access_disabled_drivers() == 0);
     CHECK(test_unverified_map_blocks_routing_without_hardware_writes() == 0);
     CHECK(test_invalid_or_duplicate_map_is_rejected() == 0);
     CHECK(test_verified_map_requires_traceability_fields() == 0);

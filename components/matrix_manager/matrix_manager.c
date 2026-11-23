@@ -122,7 +122,8 @@ matrix_manager_status_t matrix_manager_init(matrix_manager_t *manager,
         (hw->set_mux == NULL) || (hw->set_d_mask == NULL) ||
         (hw->set_all_units == NULL) || (hw->set_unit == NULL) ||
         (hw->set_drivers_enabled == NULL) || (hw->delay_us == NULL) ||
-        ((config->active_unit_drive != MATRIX_UNIT_LOW_SIDE) &&
+        ((config->active_unit_drive != MATRIX_UNIT_FLOATING) &&
+         (config->active_unit_drive != MATRIX_UNIT_LOW_SIDE) &&
          (config->active_unit_drive != MATRIX_UNIT_HIGH_SIDE))) {
         return MATRIX_MANAGER_ERR_INVALID_ARG;
     }
@@ -174,16 +175,25 @@ matrix_manager_status_t matrix_manager_connect(matrix_manager_t *manager,
     if (!manager->address_map_loaded || !manager->address_map.verified) {
         return MATRIX_MANAGER_ERR_ADDRESS_MAP_UNVERIFIED;
     }
+    if ((manager->config.active_unit_drive != MATRIX_UNIT_LOW_SIDE) &&
+        (manager->config.active_unit_drive != MATRIX_UNIT_HIGH_SIDE)) {
+        return MATRIX_MANAGER_ERR_INVALID_STATE;
+    }
     if ((manager->state == MATRIX_MANAGER_STATE_CONNECTED) &&
         (manager->active_apartment == apartment)) {
         return MATRIX_MANAGER_OK;
     }
 
-    matrix_manager_status_t status = safe_open_once(manager);
-    if (status != MATRIX_MANAGER_OK) {
-        return latch_fault(manager, status);
+    matrix_manager_status_t status = MATRIX_MANAGER_OK;
+    if (manager->state == MATRIX_MANAGER_STATE_CONNECTED) {
+        status = safe_open_once(manager);
+        if (status != MATRIX_MANAGER_OK) {
+            return latch_fault(manager, status);
+        }
+        manager->state = MATRIX_MANAGER_STATE_OPEN;
+    } else if (manager->state != MATRIX_MANAGER_STATE_OPEN) {
+        return MATRIX_MANAGER_ERR_INVALID_STATE;
     }
-    manager->state = MATRIX_MANAGER_STATE_OPEN;
 
     const matrix_manager_coordinate_t coordinate =
         manager->address_map.apartments[(size_t)(apartment - 1U)];
@@ -241,6 +251,10 @@ matrix_manager_status_t matrix_manager_disconnect(matrix_manager_t *manager)
     if (manager->state == MATRIX_MANAGER_STATE_FAULT) {
         return MATRIX_MANAGER_ERR_FAULT;
     }
+    if (manager->state == MATRIX_MANAGER_STATE_OPEN) {
+        manager->active_apartment = 0U;
+        return MATRIX_MANAGER_OK;
+    }
 
     const matrix_manager_status_t status = safe_open_once(manager);
     if (status != MATRIX_MANAGER_OK) {
@@ -257,7 +271,13 @@ matrix_manager_status_t matrix_manager_emergency_stop(matrix_manager_t *manager)
     if ((manager == NULL) || !manager->initialized) {
         return MATRIX_MANAGER_ERR_INVALID_STATE;
     }
-    const matrix_manager_status_t status = safe_open_once(manager);
+    matrix_manager_status_t status = MATRIX_MANAGER_OK;
+    if (manager->state != MATRIX_MANAGER_STATE_OPEN) {
+        status = safe_open_once(manager);
+    } else {
+        manager->active_apartment = 0U;
+        status = manager->hw.set_drivers_enabled(manager->hw.context, false);
+    }
     manager->last_fault = (status == MATRIX_MANAGER_OK)
                         ? MATRIX_MANAGER_ERR_FAULT : status;
     manager->state = MATRIX_MANAGER_STATE_FAULT;
@@ -270,7 +290,12 @@ matrix_manager_status_t matrix_manager_recover(matrix_manager_t *manager)
         return MATRIX_MANAGER_ERR_INVALID_STATE;
     }
 
-    const matrix_manager_status_t status = safe_open_once(manager);
+    matrix_manager_status_t status = manager->hw.set_drivers_enabled(
+        manager->hw.context, true);
+    if (status == MATRIX_MANAGER_OK) {
+        manager->hw.delay_us(manager->hw.context, manager->config.driver_wakeup_us);
+        status = safe_open_once(manager);
+    }
     if (status != MATRIX_MANAGER_OK) {
         manager->last_fault = status;
         manager->state = MATRIX_MANAGER_STATE_FAULT;
