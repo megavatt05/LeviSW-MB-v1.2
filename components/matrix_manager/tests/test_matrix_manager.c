@@ -166,6 +166,50 @@ static int test_disconnect_opens_gate_before_output_changes(void)
     return 0;
 }
 
+
+static int test_all_80_addresses_map_to_one_d_and_one_e(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+
+    for (uint8_t apartment = 1U; apartment <= 80U; ++apartment) {
+        const uint8_t index = (uint8_t)(apartment - 1U);
+        const uint8_t decade = (uint8_t)(index / 10U);
+        const uint8_t unit = (uint8_t)(index % 10U);
+
+        CHECK(matrix_manager_connect(&manager, apartment) == MATRIX_MANAGER_OK);
+        CHECK(manager.state == MATRIX_MANAGER_STATE_CONNECTED);
+        CHECK(manager.active_apartment == apartment);
+        CHECK(fake.mux_enabled && fake.mux_decade == decade);
+        CHECK(fake.d_mask == (uint8_t)(1U << decade));
+        CHECK(fake.active_unit == unit);
+        CHECK(fake.active_unit_drive == MATRIX_UNIT_LOW_SIDE);
+    }
+    return 0;
+}
+
+static int test_reroute_enforces_break_before_make(void)
+{
+    matrix_manager_t manager;
+    fake_hw_t fake;
+    CHECK(setup(&manager, &fake) == MATRIX_MANAGER_OK);
+    CHECK(matrix_manager_connect(&manager, 10U) == MATRIX_MANAGER_OK);
+
+    fake.count = 0U;
+    CHECK(matrix_manager_connect(&manager, 47U) == MATRIX_MANAGER_OK);
+    CHECK(fake.ops[0] == OP_MUX && fake.values[0] == 0U); /* Open analog gate first. */
+    CHECK(fake.ops[1] == OP_D_MASK && fake.values[1] == 0U);
+    CHECK(fake.ops[2] == OP_ALL_UNITS && fake.values[2] == MATRIX_UNIT_FLOATING);
+    CHECK(fake.ops[3] == OP_DRIVERS && fake.values[3] == 0U);
+    CHECK(fake.ops[4] == OP_DELAY && fake.values[4] == 150U);
+    CHECK(manager.active_apartment == 47U);
+    CHECK(fake.mux_enabled && fake.mux_decade == 4U);
+    CHECK(fake.d_mask == (1U << 4));
+    CHECK(fake.active_unit == 6U);
+    return 0;
+}
+
 static int test_invalid_apartment_does_not_touch_hardware(void)
 {
     matrix_manager_t manager;
@@ -213,6 +257,8 @@ int main(void)
 {
     CHECK(test_flat_47_maps_to_d4_e6() == 0);
     CHECK(test_disconnect_opens_gate_before_output_changes() == 0);
+    CHECK(test_all_80_addresses_map_to_one_d_and_one_e() == 0);
+    CHECK(test_reroute_enforces_break_before_make() == 0);
     CHECK(test_invalid_apartment_does_not_touch_hardware() == 0);
     CHECK(test_failure_latches_fault_and_attempts_safe_off() == 0);
     CHECK(test_fault_recovery_requires_successful_safe_off() == 0);
