@@ -1,0 +1,52 @@
+name: Handset detector and call runtime native tests
+
+on:
+  push:
+    branches:
+      - master
+      - fix/safety-driver-audit
+    paths:
+      - "components/handset_detector/**"
+      - "components/call_runtime/**"
+      - "components/call_controller/**"
+      - "components/matrix_manager/**"
+      - "components/lu_decoder/**"
+      - ".github/workflows/call-runtime-native.yml"
+  pull_request:
+    paths:
+      - "components/handset_detector/**"
+      - "components/call_runtime/**"
+      - "components/call_controller/**"
+      - "components/matrix_manager/**"
+      - "components/lu_decoder/**"
+      - ".github/workflows/call-runtime-native.yml"
+  workflow_dispatch:
+
+jobs:
+  native-tests:
+    name: Build and run handset / call runtime tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test handset detector
+        run: |
+          cmake -S components/handset_detector/tests -B build/handset_detector
+          cmake --build build/handset_detector --parallel
+          ctest --test-dir build/handset_detector --output-on-failure
+
+      - name: Test call runtime integration
+        run: |
+          cmake -S components/call_runtime/tests -B build/call_runtime
+          cmake --build build/call_runtime --parallel
+          ctest --test-dir build/call_runtime --output-on-failure
+
+      - name: Sanitizer build and tests
+        run: |
+          cmake -S components/handset_detector/tests -B build/handset_detector_san -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror"
+          cmake --build build/handset_detector_san --parallel
+          ctest --test-dir build/handset_detector_san --output-on-failure
+          cmake -S components/call_runtime/tests -B build/call_runtime_san -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -Wall -Wextra -Werror"
+          cmake --build build/call_runtime_san --parallel
+          ctest --test-dir build/call_runtime_san --output-on-failure
