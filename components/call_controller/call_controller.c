@@ -54,6 +54,7 @@ static call_controller_status_t finish_hangup(call_controller_t *controller,
     }
 
     controller->apartment = 0U;
+    controller->ring_started_ms = 0U;
     controller->last_error = CALL_CONTROLLER_OK;
     change_state(controller, CALL_STATE_STANDBY, now_ms);
     return CALL_CONTROLLER_OK;
@@ -106,6 +107,7 @@ call_controller_status_t call_controller_handle_event(call_controller_t *control
         }
 
         controller->apartment = 0U;
+        controller->ring_started_ms = 0U;
         controller->last_error = CALL_CONTROLLER_OK;
         change_state(controller, CALL_STATE_STANDBY, now_ms);
         return CALL_CONTROLLER_OK;
@@ -158,6 +160,7 @@ call_controller_status_t call_controller_handle_event(call_controller_t *control
         }
 
         change_state(controller, CALL_STATE_RINGING, now_ms);
+        controller->ring_started_ms = now_ms;
         return CALL_CONTROLLER_OK;
 
     case CALL_EVENT_PICKUP_CANDIDATE:
@@ -209,7 +212,8 @@ call_controller_status_t call_controller_tick(call_controller_t *controller,
 
     if ((controller->state == CALL_STATE_RINGING) &&
         (controller->config.ring_timeout_ms != 0U) &&
-        (elapsed >= controller->config.ring_timeout_ms)) {
+        (now_ms >= controller->ring_started_ms) &&
+        ((now_ms - controller->ring_started_ms) >= controller->config.ring_timeout_ms)) {
         return finish_hangup(controller, now_ms);
     }
 
