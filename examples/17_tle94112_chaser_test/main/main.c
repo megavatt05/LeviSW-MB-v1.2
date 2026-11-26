@@ -536,15 +536,9 @@ void app_main(void)
      * паразитные диоды выключенных полумостов надежно закрыты, и тусклое свечение полностью устранено! */
     ESP_LOGI(TAG, "Этап 8: Инициализация D1 MC33879A и включение выхода OUT1 (XP2:1, D0) -> +V2...");
     (void)levisw_bsp_rs485_set_active(false);
-    gpio_set_level(LEVISW_PIN_D8_A6_IN6, 0);
-    gpio_config_t in6_cfg = {
-        .pin_bit_mask = (1ULL << LEVISW_PIN_D8_A6_IN6),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    (void)gpio_config(&in6_cfg);
+    /* По подтверждению пользователя IN5/IN6 на самой MC33879 уже LOW.
+     * CORN13/RN13 не установлена; GPIO21 не соединён с IN6 и не управляет им.
+     */
 
     mc33879a_config_t mc_cfg = {
         .spi_host = SPI2_HOST,
