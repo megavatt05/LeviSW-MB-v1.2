@@ -5,8 +5,9 @@
  * Все значения строго соответствуют принципиальной схеме U210001-A E3 (LeviSW-MB_v1.2):
  * - MCU (DD4): ESP32-PICO-V3 (LGA-48)
  * - Расширитель GPIO (DD3): TCA9535PWR (I2C 0x20)
- * - Матрица десятков D0..D7 (DA1): ADG1608BR + защита от переполюсовки D1 (MC33879APEKR2)
- * - Матрица единиц E0..E9 (D2): TLE94112EL (12 полумостов, нестандартная разводка клемм XP3)
+ * - Матрица D0..D7 (XP2): выходы S1..S8 драйвера D1 MC33879APEKR2
+ * - Матрица E0..E9 (XP3): выходы D2 TLE94112EL (12 полумостов, нестандартная разводка)
+ * - ADG1608BR (DA1): отдельный аналоговый селектор +LINE -> AMP1..AMP8 внешнего интерфейса XS3
  * - Питание: TPS65261RHBR (D3) + LM22675MRX-5.0 (DP1, DP2) + TL431 (DV1)
  * - Регулировка и телеметрия: MCP4532T-104E/MS (DA2, DA3, DA4) + INA226AIDGSR (DD5, DD6; DD7 DNP)
  */
@@ -141,9 +142,11 @@ extern "C" {
 #define LEVISW_MV_R_SER_OHM         4700U        /* R42 (MV1), R53 (MV2), R64 (MV1e) */
 
 /* ============================================================================
- * 7. Маппинг матрицы 8x10 (Десятки D0..D7 и Единицы E0..E9)
+ * 7. Размеры координатной матрицы и маппинг единиц E0..E9
  * ========================================================================== */
-#define LEVISW_MATRIX_DOZENS_COUNT  8U           /* D0..D7 (клеммник XP2:1..8) */
+#define LEVISW_D_CHANNELS_COUNT        8U      /* D0..D7 от MC33879.S1..S8 -> XP2:1..8 */
+#define LEVISW_ADG1608_CHANNELS_COUNT  8U      /* ADG1608.S1..S8 -> AMP1..AMP8 -> XS3 */
+#define LEVISW_MATRIX_DOZENS_COUNT LEVISW_D_CHANNELS_COUNT /* Устаревший alias для совместимости */
 #define LEVISW_MATRIX_UNITS_COUNT   10U          /* E0..E9 (клеммник XP3:1..10) */
 #define LEVISW_MATRIX_MAX_FLATS     80U          /* 80 абонентов */
 
