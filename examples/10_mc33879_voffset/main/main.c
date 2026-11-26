@@ -8,9 +8,9 @@
  *     - MOSI (GPIO7), MISO (GPIO9), SCLK (GPIO5);
  *     - Chip Select CS2 (GPIO8, CS-D, подтяжка RN19 10к);
  *     - Разрешение работы EN-DE (GPIO20, pull-down RN19 10к);
- *  3. Прямые аппаратные входы управления:
- *     - IN5 -> GPIO27 (совместно с RS-ON и кнопкой SW1);
- *     - IN6 -> GPIO21 (через резисторную сборку RN13, pull-down RN21 1к).
+ *  3. На осмотренном экземпляре CORN13/RN13 не установлена:
+ *     IN5 и IN6 MC33879 не подключены к GPIO27/GPIO21.
+ *     Их уровни нужно проверить на самих выводах D1; GPIO21 не управляет IN6.
  */
 
 #include <stdio.h>
@@ -73,15 +73,9 @@ static void mc33879_test_task(void *pvParameters)
 {
     ESP_LOGW(TAG, "Тест MC33879: кадр 0xAA55 включает OUT1/OUT3/OUT5/OUT7; запускать только без абонентской линии!");
 
-    /* Настраиваем прямой вход IN6 (GPIO21) */
-    gpio_config_t in6_cfg = {
-        .pin_bit_mask = (1ULL << LEVISW_PIN_D8_A6_IN6),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&in6_cfg);
+    /* IN5/IN6 не подключены к GPIO на осмотренной плате (CORN13/RN13 DNP).
+     * GPIO21 нельзя использовать как управление IN6; проверять уровни на выводах D1.
+     */
 
     uint32_t cycle = 0;
 
