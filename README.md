@@ -135,6 +135,8 @@
 - [Анализ принципиальной схемы](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/SCHEMATIC_ANALYSIS.md)
 - [Даташиты и официальные ссылки производителей](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/DATASHEETS.md)
 - [Трассировка +LINE до абонентских линий](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/SIGNAL_PATH_PLUS_LINE_TO_SUBSCRIBER.md)
+- [Анализ связки MC33879 / ADG1608 / TLE94112](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/MC33879_ADG1608_TLE94112_MATRIX_ANALYSIS.md)
+- [Аудит рабочего напряжения VPWR MC33879](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/MC33879_VPWR_OPERATING_RANGE_AUDIT.md)
 
 Ветка аппаратной документации не объединена с `main`. Исходный PDF КД и локальные копии даташитов добавлять туда отдельными бинарными файлами, когда загрузка возможна; до этого фиксировать SHA-256 и ссылки на оригиналы.
 
