@@ -62,7 +62,7 @@ void app_main(void)
     ESP_ERROR_CHECK(levisw_bsp_ina226_read(LEVISW_INA_V1, &v_v1, NULL, &i_ma, NULL));
     ESP_LOGI("APP", "PG=%d, +V1=%.2f В, I=%.1f мА", pg, v_v1, i_ma);
 
-    /* Выбор десятка D4 (0..7) и получение номера полумоста TLE94112 для единицы E7 */
+    /* Выбор аналогового канала AMP5 через ADG1608; это не включение координаты D4. */
     ESP_ERROR_CHECK(levisw_bsp_adg1608_select(4, true));
     uint8_t hb = levisw_bsp_unit_to_tle_hb(7); /* Вернёт 10 (PO10) */
 
