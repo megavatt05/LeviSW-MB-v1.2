@@ -161,3 +161,16 @@ idf.py flash monitor
 ```
 
 Перед использованием примера проверить его актуальность и конфигурацию целевой платы.
+
+
+### Текущий статус аппаратного этапа
+
+Актуальные рабочие документы в ветке `docs/hardware-reference`:
+
+- [Статус и план аппаратного аудита](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/HARDWARE_AUDIT_STATUS.md)
+- [Открытые аппаратные вопросы и риски](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/HARDWARE_ISSUES.md)
+- [Физическая матрица 8×10](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/MATRIX_8X10.md)
+- [Трубка ЭЛТИС А3](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/ELTIS_A3_HANDSET.md)
+- [Протокол аппаратных измерений](https://github.com/megavatt05/LeviSW-MB-v1.2/blob/docs/hardware-reference/docs/hardware/MEASUREMENTS.md)
+
+**Важно:** документы фиксируют подтверждённые схемой соединения отдельно от неизвестных параметров. Физическая карта 80 квартир, внутренняя схема ЭЛТИС А3, возвратный маршрут `-LINE` через E-координату и фактические напряжения пока не подтверждены измерениями. Физическую коммутацию не разрешать до закрытия критических вопросов из `HARDWARE_ISSUES.md`.
