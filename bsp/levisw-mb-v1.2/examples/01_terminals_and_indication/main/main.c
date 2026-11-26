@@ -10,9 +10,9 @@
  *     - имитация импульса отпирания замка на линии XP1:9 (Open/1W) через перемычку R1 (0 Ом)
  *       от выхода SW-OUT2 (полумост PO2 драйвера TLE94112EL);
  *  4. Выходные клеммники матрицы:
- *     - XP2 (D8 OUT, 8-pin): поочередная коммутация десятков D0..D7 (TP27..TP34) через DA1 ADG1608;
- *     - XP3 (E10 OUT, 10-pin): контроль таблицы соответствия единиц E0..E9 (TP35..TP44)
- *       и полумостов PO1..PO12 драйвера D2 TLE94112EL.
+ *     - XP2 (D8 OUT, 8-pin): линии D0..D7 от MC33879, этим примером не переключаются;
+ *     - XP3 (E10 OUT, 10-pin): отображение таблицы E0..E9 (TP35..TP44) -> PO1..PO12;
+ *     - ADG1608 отдельно выбирает аналоговый маршрут +LINE -> AMP1..AMP8/XS3.
  */
 
 #include <stdio.h>
@@ -163,7 +163,7 @@ static void trigger_door_open_pulse(void)
  * ВАЖНО: Вывод GPIO27 является аппаратно разделённым:
  *  - RS-ON -> R11 (1k) -> DD2 MAX13487 nSHDN (TP55);
  *  - BUTTON -> R10 (4.7k) <- SW1 MODE (TP21, TP58; pull-up R9 4.7k к +3.3V);
- *  - D8-A5 -> RN13 -> D1 MC33879 IN5 (TP68, pull-down RN21 1k).
+ *  - На осмотренном экземпляре CORN13/RN13 не установлена; GPIO27/RS-ON не подключён к MC33879 IN5.
  * Для опроса кнопки мы настраиваем GPIO27 как вход с подтяжкой.
  */
 static void button_task(void *pvParameters)
@@ -246,22 +246,24 @@ static void lu_monitor_task(void *pvParameters)
 }
 
 /* --------------------------------------------------------------------------
- * 5. Тестирование выходных клеммников XP2 (D8 OUT) и XP3 (E10 OUT)
+ * 5. Выбор AMP-маршрута ADG1608 и отображение таблицы выходов XP2/XP3
  * ------------------------------------------------------------------------ */
 
 static void matrix_terminals_demo_task(void *pvParameters)
 {
-    uint8_t demo_dozen = 0;
+    uint8_t demo_channel = 0;
 
     while (1) {
         if (s_service_mode_active) {
-            /* В сервисном режиме поочерёдно переключаем клеммы десятков D0..D7 */
-            ESP_LOGI(TAG, "--- ТЕСТ ВЫХОДНЫХ КЛЕММНИКОВ ---");
-            ESP_LOGI(TAG, "Выбор клеммы десятков XP2:%u (D%u, TP%u) через ADG1608 (SW-EN=1)",
-                     demo_dozen + 1, demo_dozen, 27 + demo_dozen);
+            /* В сервисном режиме поочерёдно выбираем аналоговые маршруты AMP1..AMP8.
+             * D0..D7 через MC33879 этим вызовом не переключаются. */
+            ESP_LOGI(TAG, "--- ПРОВЕРКА AMP-МАРШРУТОВ И ТАБЛИЦЫ КЛЕММ ---");
+            ESP_LOGW(TAG, "ADG1608 соединяет +LINE с выбранным AMP-каналом; не запускать на активной линии!");
+            ESP_LOGI(TAG, "Выбор ADG1608 S%u -> AMP%u (XS3)",
+                     demo_channel + 1U, demo_channel + 1U);
 
-            /* Коммутируем десяток на мультиплексоре DA1 ADG1608BR */
-            levisw_bsp_adg1608_select(demo_dozen, true);
+            /* Выбираем аналоговый маршрут AMP через DA1 ADG1608BR */
+            levisw_bsp_adg1608_select(demo_channel, true);
 
             /* Выводим в лог соответствие единиц E0..E9 на клеммнике XP3:1..10 */
             for (uint8_t unit = 0; unit < LEVISW_MATRIX_UNITS_COUNT; unit++) {
@@ -270,10 +272,10 @@ static void matrix_terminals_demo_task(void *pvParameters)
                          unit + 1, unit, 35 + unit, hb);
             }
 
-            demo_dozen = (demo_dozen + 1) % LEVISW_MATRIX_DOZENS_COUNT;
+            demo_channel = (demo_channel + 1U) % LEVISW_ADG1608_CHANNELS_COUNT;
             vTaskDelay(pdMS_TO_TICKS(2000));
         } else {
-            /* В дежурном режиме отключаем мультиплексор десятков (Hi-Z) */
+            /* В дежурном режиме отключаем аналоговый мультиплексор AMP (Hi-Z) */
             levisw_bsp_adg1608_select(0, false);
             vTaskDelay(pdMS_TO_TICKS(500));
         }
