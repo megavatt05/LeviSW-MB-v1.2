@@ -5,8 +5,9 @@
  * Все значения строго соответствуют принципиальной схеме U210001-A E3 (LeviSW-MB_v1.2):
  * - MCU (DD4): ESP32-PICO-V3 (LGA-48)
  * - Расширитель GPIO (DD3): TCA9535PWR (I2C 0x20)
- * - Матрица десятков D0..D7 (DA1): ADG1608BR + защита от переполюсовки D1 (MC33879APEKR2)
- * - Матрица единиц E0..E9 (D2): TLE94112EL (12 полумостов, нестандартная разводка клемм XP3)
+ * - Координата D0..D7 (XP2): силовые выходы D1 MC33879APEKR2
+ * - Координата E0..E9 (XP3): выходы D2 TLE94112EL
+ * - Отдельный ADG1608BR (DA1): аналоговый селектор +LINE -> AMP1..AMP8
  * - Питание: TPS65261RHBR (D3) + LM22675MRX-5.0 (DP1, DP2) + TL431 (DV1)
  * - Регулировка и телеметрия: MCP4532T-104E/MS (DA2, DA3, DA4) + INA226AIDGSR (DD5, DD6; DD7 DNP)
  */
@@ -34,14 +35,13 @@ extern "C" {
 #define LEVISW_PIN_RS485_RXD        GPIO_NUM_4   /* U1RXD <- RN8 <- RO (DD2:1, TP53, TP86) */
 
 /*
- * ВНИМАНИЕ — аппаратное разделение линии IO27 (TP89):
- *  1) RS-ON -> R11 (1k) -> DD2 MAX13487 nSHDN (TP55, pull-up RN5 10k к +3.3V)
- *  2) BUTTON -> R10 (4.7k) <- SW1 MODE (TP21, TP58, TP70; pull-up R9 4.7k к +3.3V)
- *  3) D8-A5 -> RN13 (установлена) -> D1 MC33879 IN5 (TP68, TP134, pull-down RN21 1k)
+ * IO27 (TP89) на осмотренном экземпляре:
+ *  1) RS-ON -> R11 (1k) -> DD2 MAX13487 nSHDN;
+ *  2) BUTTON -> R10 (4.7k) <- SW1 MODE.
+ * CORN13/RN13 не установлена; IN5 MC33879 не соединён с IO27.
  */
-#define LEVISW_PIN_RS_ON            GPIO_NUM_27  /* Выход/вход общего узла RS-ON / BUTTON / D8-A5 */
-#define LEVISW_PIN_BUTTON_MODE      GPIO_NUM_27  /* Кнопка SW1 MODE замыкает через R10 на GND */
-#define LEVISW_PIN_D8_A5_IN5        GPIO_NUM_27  /* Прямой вход IN5 драйвера D1 через RN13 */
+#define LEVISW_PIN_RS_ON            GPIO_NUM_27  /* RS-ON -> DD2 MAX13487 nSHDN */
+#define LEVISW_PIN_BUTTON_MODE      GPIO_NUM_27  /* SW1 MODE через R10 на GND */
 
 /* 1-Wire / OpenDoor (через установленную сборку RN12 GPIO-1W, пины JTAG MTDI/MTDO) */
 #define LEVISW_PIN_1W_RX            GPIO_NUM_12  /* MTDI / U2RXD <- RN12 <- 1WRx (TP57, TP90) */
@@ -78,7 +78,7 @@ extern "C" {
 #define LEVISW_PIN_SPI_CS2_MC33     GPIO_NUM_8   /* SPICS2 CS-D (TP114) -> D1:18 CS,  pull-up RN19 10k */
 #define LEVISW_PIN_SPI_EN0_SPARE    GPIO_NUM_22  /* GPIO22 EN-P (TP120, резерв) */
 #define LEVISW_PIN_SPI_EN2_DRIVERS  GPIO_NUM_20  /* GPIO20 EN-DE (TP115) -> D1:15 EN & D2:8 EN, pull-down RN19 10k */
-#define LEVISW_PIN_D8_A6_IN6        GPIO_NUM_21  /* GPIO21 (TP121) -> RN13 -> D8-A6 -> D1:14 IN6 (TP69, TP135) */
+/* MC33879 IN5 (D1:19) и IN6 (D1:14) не соединены с GPIO: CORN13/RN13 DNP. */
 
 /* ============================================================================
  * 4. Детекция линий трубок (LU1/LU2), АЦП, ЦАП и LED (Листы 2, 3, 4)
