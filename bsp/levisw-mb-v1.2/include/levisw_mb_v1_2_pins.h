@@ -34,14 +34,17 @@ extern "C" {
 #define LEVISW_PIN_RS485_RXD        GPIO_NUM_4   /* U1RXD <- RN8 <- RO (DD2:1, TP53, TP86) */
 
 /*
- * ВНИМАНИЕ — аппаратное разделение линии IO27 (TP89):
- *  1) RS-ON -> R11 (1k) -> DD2 MAX13487 nSHDN (TP55, pull-up RN5 10k к +3.3V)
- *  2) BUTTON -> R10 (4.7k) <- SW1 MODE (TP21, TP58, TP70; pull-up R9 4.7k к +3.3V)
- *  3) D8-A5 -> RN13 (установлена) -> D1 MC33879 IN5 (TP68, TP134, pull-down RN21 1k)
+ * IO27 (TP89) на осмотренном экземпляре платы:
+ *  1) RS-ON -> R11 -> DD2 MAX13487 nSHDN;
+ *  2) BUTTON -> R10 <- SW1 MODE;
+ *  3) CORN13/RN13 не установлена: IN5 MC33879 не соединён с IO27.
+ *
+ * Не использовать GPIO27 как управляющий вход IN5 для этой аппаратной
+ * конфигурации. Входы IN5/IN6 MC33879 физически не подключены к GPIO.
  */
-#define LEVISW_PIN_RS_ON            GPIO_NUM_27  /* Выход/вход общего узла RS-ON / BUTTON / D8-A5 */
-#define LEVISW_PIN_BUTTON_MODE      GPIO_NUM_27  /* Кнопка SW1 MODE замыкает через R10 на GND */
-#define LEVISW_PIN_D8_A5_IN5        GPIO_NUM_27  /* Прямой вход IN5 драйвера D1 через RN13 */
+#define LEVISW_PIN_RS_ON            GPIO_NUM_27  /* RS-ON -> DD2 MAX13487 nSHDN */
+#define LEVISW_PIN_BUTTON_MODE      GPIO_NUM_27  /* Кнопка SW1 MODE через R10 */
+
 
 /* 1-Wire / OpenDoor (через установленную сборку RN12 GPIO-1W, пины JTAG MTDI/MTDO) */
 #define LEVISW_PIN_1W_RX            GPIO_NUM_12  /* MTDI / U2RXD <- RN12 <- 1WRx (TP57, TP90) */
@@ -78,7 +81,7 @@ extern "C" {
 #define LEVISW_PIN_SPI_CS2_MC33     GPIO_NUM_8   /* SPICS2 CS-D (TP114) -> D1:18 CS,  pull-up RN19 10k */
 #define LEVISW_PIN_SPI_EN0_SPARE    GPIO_NUM_22  /* GPIO22 EN-P (TP120, резерв) */
 #define LEVISW_PIN_SPI_EN2_DRIVERS  GPIO_NUM_20  /* GPIO20 EN-DE (TP115) -> D1:15 EN & D2:8 EN, pull-down RN19 10k */
-#define LEVISW_PIN_D8_A6_IN6        GPIO_NUM_21  /* GPIO21 (TP121) -> RN13 -> D8-A6 -> D1:14 IN6 (TP69, TP135) */
+/* MC33879 IN6 (D1:14): NC на осмотренном экземпляре, CORN13/RN13 не установлена. */
 
 /* ============================================================================
  * 4. Детекция линий трубок (LU1/LU2), АЦП, ЦАП и LED (Листы 2, 3, 4)
