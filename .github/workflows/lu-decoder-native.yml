@@ -1,0 +1,32 @@
+name: LU decoder native tests
+
+on:
+  push:
+    branches:
+      - master
+      - fix/safety-driver-audit
+    paths:
+      - "components/lu_decoder/**"
+      - ".github/workflows/lu-decoder-native.yml"
+  pull_request:
+    paths:
+      - "components/lu_decoder/**"
+      - ".github/workflows/lu-decoder-native.yml"
+  workflow_dispatch:
+
+jobs:
+  lu-decoder-tests:
+    name: Build and run platform-independent decoder tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure native CMake test project
+        run: cmake -S components/lu_decoder/tests -B build/lu_decoder_tests -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build tests
+        run: cmake --build build/lu_decoder_tests --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build/lu_decoder_tests --output-on-failure

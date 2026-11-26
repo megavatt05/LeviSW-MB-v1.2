@@ -20,11 +20,14 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include <string.h>
+#include <stdlib.h>
 
 static const char *TAG = "TLE94112";
 
-// === Регистры TLE94112 (MSB-first) ===
-// Формат кадра SPI (16 бит): [Байт Адреса] [Байт Данных]
+// === Регистры TLE94112 ===
+// Формат кадра SPI (16 бит): сначала байт адреса, затем байт данных.
+// Устройство SPI настроено с SPI_DEVICE_BIT_LSBFIRST: биты каждого байта
+// передаются младшим битом вперёд согласно протоколу TLE94112.
 // Байт адреса:
 // Бит 7 (OP): 0=Read, 1=Write
 // Биты 6-2 (Addr): Адрес регистра (5 бит)
@@ -114,6 +117,8 @@ struct tle94112_handle_s {
 
 // Выполнение 16-битной транзакции
 static esp_err_t spi_transaction(tle94112_handle_t handle, uint8_t addr_byte, uint8_t data_byte, uint8_t *rx_data) {
+    if (handle == NULL || handle->spi_dev == NULL) return ESP_ERR_INVALID_STATE;
+
     uint8_t tx_buf[2] = { addr_byte, data_byte };
     uint8_t rx_buf[2] = { 0 };
 
@@ -137,7 +142,8 @@ static esp_err_t spi_transaction(tle94112_handle_t handle, uint8_t addr_byte, ui
 // === Публичный API ===
 
 tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
-    if (!config) return NULL;
+    if (!config || config->gpio_cs < 0 || config->spi_freq_hz <= 0 ||
+        config->spi_freq_hz > 5000000) return NULL;
 
     // 1. Выделение памяти
     tle94112_handle_t handle = calloc(1, sizeof(struct tle94112_handle_s));
@@ -145,12 +151,21 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
 
     handle->en_gpio = config->gpio_en;
     handle->mutex = xSemaphoreCreateMutex();
+    if (handle->mutex == NULL) {
+        free(handle);
+        return NULL;
+    }
 
-    // 2. Настройка GPIO EN
+    // 2. Настройка GPIO EN: сначала безопасный LOW, ошибки конфигурации не игнорируем.
     if (handle->en_gpio >= 0) {
-        gpio_reset_pin(handle->en_gpio);
-        gpio_set_direction(handle->en_gpio, GPIO_MODE_OUTPUT);
-        gpio_set_level(handle->en_gpio, 0); // OFF initially
+        esp_err_t gpio_err = gpio_reset_pin(handle->en_gpio);
+        if (gpio_err == ESP_OK) gpio_err = gpio_set_direction(handle->en_gpio, GPIO_MODE_OUTPUT);
+        if (gpio_err == ESP_OK) gpio_err = gpio_set_level(handle->en_gpio, 0);
+        if (gpio_err != ESP_OK) {
+            vSemaphoreDelete(handle->mutex);
+            free(handle);
+            return NULL;
+        }
     }
 
     // 3. Настройка SPI (Mode 1, LSB-first!)
@@ -163,7 +178,10 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
         .flags = SPI_DEVICE_BIT_LSBFIRST,  // LSB-first!
     };
     
-    if (spi_bus_add_device(config->spi_host, &devcfg, &handle->spi_dev) != ESP_OK) {
+    esp_err_t add_err = spi_bus_add_device(config->spi_host, &devcfg, &handle->spi_dev);
+    if (add_err != ESP_OK) {
+        if (handle->en_gpio >= 0) (void)gpio_set_level(handle->en_gpio, 0);
+        vSemaphoreDelete(handle->mutex);
         free(handle);
         return NULL;
     }
@@ -189,27 +207,18 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
     ESP_LOGI(TAG, "CONFIG_CTRL: 0x%02X", config_data);
     uint8_t dev_id = config_data & DEV_ID_MASK;
 
-    // === ПРОВЕРКА ID ===
-    // Согласно datasheet (стр. 64):
-    // 0x0 = TLE94112EL (12 half-bridges)
-    // 0x1 = TLE94110EL (10 half-bridges)
-    // 0x2 = TLE94108EL (8 half-bridges)
-    // 0x3 = TLE94106EL (6 half-bridges)
-    // 0x4 = TLE94104EP (4 half-bridges)
-    // 0x5 = TLE94103EP (3 half-bridges)
-    // Примечание: некоторые ревизии чипов могут иметь другие ID
-    const char* chip_names[] = {
-        "TLE94112EL", "TLE94110EL", "TLE94108EL", 
-        "TLE94106EL", "TLE94104EP", "TLE94103EP"
-    };
-    
-    // Разрешаем любой ID (для тестирования)
-    if (dev_id > 0x05) {
-        ESP_LOGW(TAG, "Unknown Device ID: 0x%X (assuming TLE94112EL)", dev_id);
-        dev_id = 0;  // Предполагаем TLE94112EL
+    // Этот компонент и карта линий рассчитаны именно на 12-канальный TLE94112EL.
+    // Не подменяем неизвестный ID предполагаемым: это может включить неверные выходы.
+    if (dev_id != 0x00U) {
+        ESP_LOGE(TAG, "Unsupported or invalid TLE device ID: 0x%02X (expected TLE94112EL ID 0x00)",
+                 dev_id);
+        spi_bus_remove_device(handle->spi_dev);
+        if (handle->en_gpio >= 0) (void)gpio_set_level(handle->en_gpio, 0);
+        vSemaphoreDelete(handle->mutex);
+        free(handle);
+        return NULL;
     }
-
-    ESP_LOGI(TAG, "Detected: %s (ID=0x%X)", chip_names[dev_id], dev_id);
+    ESP_LOGI(TAG, "Detected: TLE94112EL (ID=0x00)");
 
     // 6. Сброс регистров и кеша
     handle->ctrl_cache[0] = 0;
@@ -220,17 +229,36 @@ tle94112_handle_t tle94112_init(const tle94112_config_t *config) {
     handle->protection_config = (tle94112_protection_config_t)TLE94112_PROTECTION_DEFAULTS;
     handle->last_fault_reason = TLE_FAULT_NONE;
 
-    spi_transaction(handle, REG_HB_ACT_1_CTRL_WR, 0, NULL);
-    spi_transaction(handle, REG_HB_ACT_2_CTRL_WR, 0, NULL);
-    spi_transaction(handle, REG_HB_ACT_3_CTRL_WR, 0, NULL);
+    // 6. Безопасное исходное состояние: все полумосты FLOATING.
+    const uint8_t init_regs[] = {
+        REG_HB_ACT_1_CTRL_WR, REG_HB_ACT_2_CTRL_WR, REG_HB_ACT_3_CTRL_WR,
+        REG_FW_OL_CTRL_WR, REG_FW_CTRL_WR
+    };
+    const uint8_t init_values[] = { 0x00, 0x00, 0x00, 0x00, 0x00 };
+    for (size_t i = 0; i < sizeof(init_regs) / sizeof(init_regs[0]); ++i) {
+        ret = spi_transaction(handle, init_regs[i], init_values[i], NULL);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "TLE94112 initialization write 0x%02X failed: %s",
+                     init_regs[i], esp_err_to_name(ret));
+            spi_bus_remove_device(handle->spi_dev);
+            if (handle->en_gpio >= 0) (void)gpio_set_level(handle->en_gpio, 0);
+            vSemaphoreDelete(handle->mutex);
+            free(handle);
+            return NULL;
+        }
+    }
 
-    // Отключение детектора Open Load (чтобы в паузах вызова не возникал LE) и пассивный freewheel
-    spi_transaction(handle, REG_FW_OL_CTRL_WR, 0x00, NULL);
-    spi_transaction(handle, REG_FW_CTRL_WR, 0x00, NULL);
-
-    // 7. Очистка всех статусных регистров ошибок
-    tle94112_clear_errors(handle);
-    ESP_LOGI(TAG, "Initialized, Open Load disabled, and all errors cleared.");
+    // Ошибки очищаются только после того, как начальное состояние зафиксировано.
+    ret = tle94112_clear_errors(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Initial diagnostic clear failed: %s", esp_err_to_name(ret));
+        spi_bus_remove_device(handle->spi_dev);
+        if (handle->en_gpio >= 0) (void)gpio_set_level(handle->en_gpio, 0);
+        vSemaphoreDelete(handle->mutex);
+        free(handle);
+        return NULL;
+    }
+    ESP_LOGI(TAG, "Initialized in FLOATING state; diagnostic registers cleared.");
 
     return handle;
 }
@@ -247,7 +275,9 @@ void tle94112_deinit(tle94112_handle_t handle) {
 
 esp_err_t tle94112_set_hb_state(tle94112_handle_t handle, tle_hb_idx_t hb, tle_hb_state_t state) {
     if (!handle) return ESP_ERR_INVALID_ARG;
-    if (hb > TLE_HB12) return ESP_ERR_INVALID_ARG;
+    if ((unsigned)hb >= 12U || (unsigned)state > (unsigned)TLE_HB_BRAKE) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
 
@@ -277,26 +307,24 @@ esp_err_t tle94112_set_hb_state(tle94112_handle_t handle, tle_hb_idx_t hb, tle_h
         current_val &= ~(0x03 << (TLE_HB2 * 2));
     }
 
-    handle->ctrl_cache[reg_idx] = current_val;
-
-    // Отправка команды
+    // Сначала отправляем команду. Кеш обновляем только после успешной передачи.
     esp_err_t ret = spi_transaction(handle, addr, current_val, NULL);
-    
-    // Очистка ошибок после команды для немедленной реактивации выхода
     if (ret == ESP_OK) {
-        spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-        spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
+        handle->ctrl_cache[reg_idx] = current_val;
+    } else {
+        ESP_LOGE(TAG, "HB control write failed (register 0x%02X): %s",
+                 addr, esp_err_to_name(ret));
     }
 
+    // Диагностические флаги здесь НЕ очищаем: они должны оставаться доступны
+    // приложению до явного вызова tle94112_clear_errors() после фиксации причины.
     xSemaphoreGive(handle->mutex);
     return ret;
 }
 
 esp_err_t tle94112_set_all_hb_state(tle94112_handle_t handle, tle_hb_state_t state) {
-    if (!handle) return ESP_ERR_INVALID_ARG;
-    
+    if (!handle || (unsigned)state > (unsigned)TLE_HB_BRAKE) return ESP_ERR_INVALID_ARG;
+
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
 
     uint8_t val = 0;
@@ -305,36 +333,48 @@ esp_err_t tle94112_set_all_hb_state(tle94112_handle_t handle, tle_hb_state_t sta
         val |= ((uint8_t)state << (i * 2));
     }
 
-    // Если выключаем (FLOATING), гарантируем полное обнуление кеша
-    handle->ctrl_cache[0] = val;
-    handle->ctrl_cache[1] = val;
-    handle->ctrl_cache[2] = val;
+    // Обновляем кеш только для тех банков, запись которых подтверждена SPI.
+    esp_err_t ret = spi_transaction(handle, REG_HB_ACT_1_CTRL_WR, val, NULL);
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[0] = val;
+        ret = spi_transaction(handle, REG_HB_ACT_2_CTRL_WR, val, NULL);
+    }
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[1] = val;
+        ret = spi_transaction(handle, REG_HB_ACT_3_CTRL_WR, val, NULL);
+    }
+    if (ret == ESP_OK) {
+        handle->ctrl_cache[2] = val;
+    } else {
+        ESP_LOGE(TAG, "Failed to set all half-bridges: %s", esp_err_to_name(ret));
+    }
 
-    spi_transaction(handle, REG_HB_ACT_1_CTRL_WR, val, NULL);
-    spi_transaction(handle, REG_HB_ACT_2_CTRL_WR, val, NULL);
-    spi_transaction(handle, REG_HB_ACT_3_CTRL_WR, val, NULL);
-    
-    // Очистка всех статусных регистров
-    spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-
+    // Не стираем диагностические регистры как побочный эффект управления выходами.
     xSemaphoreGive(handle->mutex);
-    return ESP_OK;
+    return ret;
 }
 
 esp_err_t tle94112_clear_errors(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
-    // Очистка ВСЕХ статусных регистров (согласно даташиту TLE94112EL для снятия Latch-off)
-    spi_transaction(handle, REG_SYS_DIAG_1_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
-    return ESP_OK;
+
+    static const uint8_t clear_regs[] = {
+        REG_SYS_DIAG_1_CLR, REG_SYS_DIAG_2_CLR, REG_SYS_DIAG_3_CLR,
+        REG_SYS_DIAG_4_CLR, REG_SYS_DIAG_5_CLR, REG_SYS_DIAG_6_CLR,
+        REG_SYS_DIAG_7_CLR
+    };
+
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(clear_regs) / sizeof(clear_regs[0]); ++i) {
+        ret = spi_transaction(handle, clear_regs[i], 0x00, NULL);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to clear diagnostic register 0x%02X: %s",
+                     clear_regs[i], esp_err_to_name(ret));
+            break;
+        }
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_diagnose(tle94112_handle_t handle) {
@@ -372,22 +412,34 @@ esp_err_t tle94112_get_sys_diag1(tle94112_handle_t handle, uint8_t *sys_diag_out
 
 esp_err_t tle94112_read_all_diag(tle94112_handle_t handle, uint8_t diag[7]) {
     if (!handle || !diag) return ESP_ERR_INVALID_ARG;
-    spi_transaction(handle, REG_SYS_DIAG_1_RD, 0, &diag[0]);
-    spi_transaction(handle, REG_SYS_DIAG_2_RD, 0, &diag[1]);
-    spi_transaction(handle, REG_SYS_DIAG_3_RD, 0, &diag[2]);
-    spi_transaction(handle, REG_SYS_DIAG_4_RD, 0, &diag[3]);
-    spi_transaction(handle, REG_SYS_DIAG_5_RD, 0, &diag[4]);
-    spi_transaction(handle, REG_SYS_DIAG_6_RD, 0, &diag[5]);
-    spi_transaction(handle, REG_SYS_DIAG_7_RD, 0, &diag[6]);
-    return ESP_OK;
+    static const uint8_t regs[] = {
+        REG_SYS_DIAG_1_RD, REG_SYS_DIAG_2_RD, REG_SYS_DIAG_3_RD,
+        REG_SYS_DIAG_4_RD, REG_SYS_DIAG_5_RD, REG_SYS_DIAG_6_RD,
+        REG_SYS_DIAG_7_RD
+    };
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i) {
+        ret = spi_transaction(handle, regs[i], 0, &diag[i]);
+        if (ret != ESP_OK) break;
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_read_all_act(tle94112_handle_t handle, uint8_t act[3]) {
     if (!handle || !act) return ESP_ERR_INVALID_ARG;
-    spi_transaction(handle, REG_HB_ACT_1_CTRL_RD, 0, &act[0]);
-    spi_transaction(handle, REG_HB_ACT_2_CTRL_RD, 0, &act[1]);
-    spi_transaction(handle, REG_HB_ACT_3_CTRL_RD, 0, &act[2]);
-    return ESP_OK;
+    static const uint8_t regs[] = {
+        REG_HB_ACT_1_CTRL_RD, REG_HB_ACT_2_CTRL_RD, REG_HB_ACT_3_CTRL_RD
+    };
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i) {
+        ret = spi_transaction(handle, regs[i], 0, &act[i]);
+        if (ret != ESP_OK) break;
+    }
+    xSemaphoreGive(handle->mutex);
+    return ret;
 }
 
 esp_err_t tle94112_get_overcurrent(tle94112_handle_t handle, uint16_t *oc_mask) {
@@ -413,8 +465,8 @@ esp_err_t tle94112_get_overcurrent(tle94112_handle_t handle, uint16_t *oc_mask) 
     // Защита от 0xFF: если чип в слипе / шина свободна / MISO подтянут к VDD,
     // все считанные байты равны 0xFF. Это означает отсутствие ответа, а не перегрузку всех 12 полумостов!
     if (diag2 == 0xFF && diag3 == 0xFF && diag4 == 0xFF) {
-        *oc_mask = 0;
-        return ESP_OK;
+        ESP_LOGE(TAG, "No valid TLE94112 response while reading overcurrent registers");
+        return ESP_ERR_INVALID_RESPONSE;
     }
 
     // Формируем маску: бит N = 1 если HB(N+1) имеет OC
@@ -458,8 +510,8 @@ esp_err_t tle94112_get_openload(tle94112_handle_t handle, uint16_t *ol_mask) {
 
     // Защита от 0xFF: если чип в слипе / шина свободна, не считаем это обрывом на всех каналах
     if (diag5 == 0xFF && diag6 == 0xFF && diag7 == 0xFF) {
-        *ol_mask = 0;
-        return ESP_OK;
+        ESP_LOGE(TAG, "No valid TLE94112 response while reading open-load registers");
+        return ESP_ERR_INVALID_RESPONSE;
     }
 
     // Формируем маску: бит N = 1 если HB(N+1) имеет OL
@@ -484,21 +536,21 @@ esp_err_t tle94112_get_openload(tle94112_handle_t handle, uint16_t *ol_mask) {
 esp_err_t tle94112_clear_overcurrent(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
-
-    return ESP_OK;
+    esp_err_t ret = spi_transaction(handle, REG_SYS_DIAG_2_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    ret = spi_transaction(handle, REG_SYS_DIAG_3_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    return spi_transaction(handle, REG_SYS_DIAG_4_CLR, 0x00, NULL);
 }
 
 esp_err_t tle94112_clear_openload(tle94112_handle_t handle) {
     if (!handle) return ESP_ERR_INVALID_ARG;
 
-    spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
-    spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
-
-    return ESP_OK;
+    esp_err_t ret = spi_transaction(handle, REG_SYS_DIAG_5_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    ret = spi_transaction(handle, REG_SYS_DIAG_6_CLR, 0x00, NULL);
+    if (ret != ESP_OK) return ret;
+    return spi_transaction(handle, REG_SYS_DIAG_7_CLR, 0x00, NULL);
 }
 
 esp_err_t tle94112_full_diagnose(tle94112_handle_t handle) {

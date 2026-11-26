@@ -1,12 +1,11 @@
 /**
  * @file main.c
- * @brief Пример 09: Коммутатор десятков и диодная защита линий D0–D7 для платы LeviSW-MB v1.2.
+ * @brief Пример 09: Проверка аналоговых каналов AMP1..AMP8 через ADG1608.
+ * @note Историческое имя каталога: D0..D7 через MC33879 этот тест не переключает.
  *
- * Демонстрирует работу аппаратного Узла 09 (Лист 5 D8-OUT.SchDoc):
- *  1. Коммутатор десятков DA1: ADG1608BR — 8-канальный аналоговый мультиплексор;
- *  2. Клеммник десятков XP2:1..8 (линии D0..D7, контрольные точки TP27..TP34);
- *  3. Диодная защитная цепь линий D0..D7 от высоковольтных выбросов и наводок;
- *  4. Управление коммутатором через расширитель DD3 TCA9535 (биты SW-A0..SW-A2, SW-EN).
+ * По листу D8 ADG1608 выбирает маршрут +LINE -> AMP1..AMP8 -> XS3/LeviAMP.
+ * Линии D0..D7 на XP2 формируются MC33879 и этим примером не переключаются.
+ * Управление ADG1608 выполняется через DD3 TCA9535 (SW-A0..SW-A2, SW-EN).
  */
 
 #include <stdio.h>
@@ -21,7 +20,7 @@
 #include "levisw_mb_v1_2_pins.h"
 #include "levisw_mb_v1_2_bsp.h"
 
-static const char *TAG = "EX09_DOZENS_MATRIX";
+static const char *TAG = "EX09_ADG1608_AMP";
 
 static led_strip_handle_t s_led_strip = NULL;
 
@@ -62,34 +61,34 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
 }
 
 /* --------------------------------------------------------------------------
- * 2. Задача тестирования коммутатора десятков D0..D7 (ADG1608)
+ * 2. Задача тестирования аналоговых каналов AMP1..AMP8 через ADG1608
  * ------------------------------------------------------------------------ */
 
-static void dozens_sweep_task(void *pvParameters)
+static void amp_channel_sweep_task(void *pvParameters)
 {
-    uint8_t current_dozen = 0;
+    uint8_t current_channel = 0;
 
-    ESP_LOGI(TAG, "Запуск сканирования и коммутации десятков D0..D7 (XP2:1..8, TP27..TP34) через DA1 ADG1608");
+    ESP_LOGW(TAG, "ВНИМАНИЕ: ADG1608 перебирает AMP1..AMP8, а не D0..D7; не запускать на активной абонентской линии!");
+    ESP_LOGI(TAG, "Сканирование аналоговых каналов ADG1608 S1..S8 -> AMP1..AMP8/XS3");
 
     while (1) {
-        ESP_LOGI(TAG, "[MATRIX SW] Выбор линии десятков D%u (Клемма XP2:%u, TP%u) | Диодная защита активна",
-                 current_dozen, current_dozen + 1, 27 + current_dozen);
+        ESP_LOGI(TAG, "[AMP ROUTE] ADG1608 S%u -> AMP%u", current_channel + 1U, current_channel + 1U);
 
-        /* Коммутируем десяток на мультиплексоре ADG1608 с разрешением (SW-EN = 1) */
-        esp_err_t err = levisw_bsp_adg1608_select(current_dozen, true);
+        /* Выбираем AMP-маршрут; выходы D0..D7 управляются отдельно через MC33879. */
+        esp_err_t err = levisw_bsp_adg1608_select(current_channel, true);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Ошибка переключения ADG1608: %s", esp_err_to_name(err));
         }
 
         /* Индикация цветом текущего десятка */
-        switch (current_dozen % 4) {
+        switch (current_channel % 4) {
         case 0: app_led_set_rgb(40, 0, 40); break; /* Пурпурный */
         case 1: app_led_set_rgb(0, 40, 40); break; /* Голубой */
         case 2: app_led_set_rgb(40, 40, 0); break; /* Желтый */
         case 3: app_led_set_rgb(20, 20, 20); break;/* Белый */
         }
 
-        current_dozen = (current_dozen + 1) % LEVISW_MATRIX_DOZENS_COUNT;
+        current_channel = (current_channel + 1U) % LEVISW_MATRIX_DOZENS_COUNT;
         vTaskDelay(pdMS_TO_TICKS(1500));
     }
 }
@@ -101,7 +100,7 @@ static void dozens_sweep_task(void *pvParameters)
 void app_main(void)
 {
     ESP_LOGI(TAG, "===========================================================");
-    ESP_LOGI(TAG, "Платы LeviSW-MB v1.2 — Пример 09: Коммутатор десятков D0-D7");
+    ESP_LOGI(TAG, "Платы LeviSW-MB v1.2 — Пример 09: ADG1608 AMP routes");
     ESP_LOGI(TAG, "Схема: U210001-A E3 (Узел 09: D8-OUT.SchDoc Лист 5)");
     ESP_LOGI(TAG, "===========================================================");
 
@@ -115,7 +114,7 @@ void app_main(void)
     ESP_ERROR_CHECK(app_led_init());
 
     /* 4. Создание задачи сканирования десятков */
-    xTaskCreate(dozens_sweep_task, "dozens_task", 4096, NULL, 5, NULL);
+    xTaskCreate(amp_channel_sweep_task, "amp_route_task", 4096, NULL, 5, NULL);
 
-    ESP_LOGI(TAG, "Пример 09 успешно запущен. Сканирование матрицы десятков D0..D7 активно.");
+    ESP_LOGW(TAG, "Пример 09 запущен: сканируются AMP1..AMP8; D0..D7 через MC33879 не тестируются.");
 }

@@ -8,9 +8,8 @@
  *     - MOSI (GPIO7), MISO (GPIO9), SCLK (GPIO5);
  *     - Chip Select CS2 (GPIO8, CS-D, подтяжка RN19 10к);
  *     - Разрешение работы EN-DE (GPIO20, pull-down RN19 10к);
- *  3. Прямые аппаратные входы управления:
- *     - IN5 -> GPIO27 (совместно с RS-ON и кнопкой SW1);
- *     - IN6 -> GPIO21 (через резисторную сборку RN13, pull-down RN21 1к).
+ *  3. На осмотренном экземпляре CORN13/RN13 не установлена: IN5/IN6
+ *     не подключены к GPIO27/GPIO21; пользователь подтвердил LOW на обоих входах.
  */
 
 #include <stdio.h>
@@ -73,15 +72,9 @@ static void mc33879_test_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Запуск инициализации и тестирования драйвера D1 MC33879APEKR2 (VOffset / Защита)");
 
-    /* Настраиваем прямой вход IN6 (GPIO21) */
-    gpio_config_t in6_cfg = {
-        .pin_bit_mask = (1ULL << LEVISW_PIN_D8_A6_IN6),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&in6_cfg);
+    /* IN5/IN6 LOW подтверждены на самих выводах MC33879.
+     * CORN13/RN13 DNP: GPIO27/GPIO21 не управляют входами.
+     */
 
     uint32_t cycle = 0;
 

@@ -25,10 +25,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "led_strip.h"
 
@@ -36,12 +38,17 @@
 #include "levisw_mb_v1_2_bsp.h"
 #include "tle94112.h"
 #include "mc33879a.h"
+#include "lu_event_dispatcher.h"
+#include "lu_decoder.h"
 
 static const char *TAG = "TLE_CHASER_TEST";
 
 static led_strip_handle_t s_led_strip = NULL;
 static tle94112_handle_t s_tle_handle = NULL;
 static mc33879a_handle_t s_mc33879;
+static lu_event_dispatcher_handle_t s_lu_dispatcher = NULL;
+static lu_decoder_t s_lu_decoder;
+static lu_decoder_config_t s_lu_decoder_config;
 
 /* --------------------------------------------------------------------------
  * Структура соответствия линий E0..E9 клеммника XP3 и полумостов TLE94112EL
@@ -93,25 +100,231 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
  * 2. Контроль питания и телеметрии шины +V2 (VPWR для TLE94112EL)
  * ------------------------------------------------------------------------ */
 
+/* --------------------------------------------------------------------------
+ * Монитор событий LU1/LU2. В ISR только захватывается фронт; здесь выполняется
+ * debounce 5 мс и печатается подтверждённое изменение уровня.
+ * ------------------------------------------------------------------------ */
+
+#define LU_DEBOUNCE_US 5000
+
+typedef struct {
+    bool stable_level;
+    bool candidate_level;
+    bool pending;
+    int64_t candidate_since_us;
+} lu_monitor_state_t;
+
+static void app_lu_event_monitor_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    lu_monitor_state_t lines[2] = {
+        { .stable_level = levisw_bsp_lu1_read() },
+        { .stable_level = levisw_bsp_lu2_read() },
+    };
+    lines[0].candidate_level = lines[0].stable_level;
+    lines[1].candidate_level = lines[1].stable_level;
+
+    ESP_LOGI(TAG, "LU monitor: начальные уровни LU1=%d, LU2=%d",
+             lines[0].stable_level, lines[1].stable_level);
+
+    uint32_t last_dropped = levisw_bsp_lu_event_dropped_count();
+    uint32_t last_monitor_dropped = 0U;
+
+    for (;;) {
+        uint32_t timeout_ms = 1000U;
+        const int64_t now_us = esp_timer_get_time();
+
+        for (size_t i = 0; i < 2; i++) {
+            if (lines[i].pending) {
+                const int64_t elapsed_us = now_us - lines[i].candidate_since_us;
+                const int64_t remaining_us = (int64_t)LU_DEBOUNCE_US - elapsed_us;
+                const uint32_t remaining_ms = (remaining_us <= 0)
+                                            ? 0U : (uint32_t)((remaining_us + 999) / 1000);
+                if (remaining_ms < timeout_ms) {
+                    timeout_ms = remaining_ms;
+                }
+            }
+        }
+
+        levisw_bsp_lu_event_t event;
+        esp_err_t err = lu_event_dispatcher_monitor_receive(s_lu_dispatcher, &event, timeout_ms);
+        if (err == ESP_OK) {
+            do {
+                const size_t index = (event.line == LEVISW_LU_LINE_1) ? 0U : 1U;
+                lines[index].candidate_level = event.level;
+                lines[index].candidate_since_us = event.timestamp_us;
+                lines[index].pending = true;
+            } while (lu_event_dispatcher_monitor_receive(s_lu_dispatcher, &event, 0U) == ESP_OK);
+        } else if (err != ESP_ERR_TIMEOUT) {
+            ESP_LOGE(TAG, "Ошибка очереди LU: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        const int64_t check_us = esp_timer_get_time();
+        for (size_t i = 0; i < 2; i++) {
+            if (!lines[i].pending ||
+                (check_us - lines[i].candidate_since_us) < LU_DEBOUNCE_US) {
+                continue;
+            }
+
+            const bool pin_level = (i == 0U) ? levisw_bsp_lu1_read()
+                                              : levisw_bsp_lu2_read();
+            if (pin_level == lines[i].candidate_level &&
+                pin_level != lines[i].stable_level) {
+                lines[i].stable_level = pin_level;
+                ESP_LOGI(TAG, "LU%u: подтверждённый уровень %s",
+                         (unsigned)(i + 1U), pin_level ? "HIGH" : "LOW");
+            }
+            lines[i].pending = false;
+        }
+
+        const uint32_t dropped = levisw_bsp_lu_event_dropped_count();
+        lu_event_dispatcher_stats_t dispatch_stats;
+        lu_event_dispatcher_get_stats(s_lu_dispatcher, &dispatch_stats);
+        if ((dropped != last_dropped) ||
+            (dispatch_stats.monitor_dropped != last_monitor_dropped)) {
+            ESP_LOGW(TAG,
+                     "Потеря событий LU: BSP dropped=%" PRIu32
+                     ", monitor dropped=%" PRIu32 "; синхронизация по GPIO",
+                     dropped - last_dropped,
+                     dispatch_stats.monitor_dropped - last_monitor_dropped);
+            last_dropped = dropped;
+            last_monitor_dropped = dispatch_stats.monitor_dropped;
+
+            /* Восстанавливаем текущее состояние, если из-за переполнения потерян последний фронт. */
+            const bool current_levels[2] = {
+                levisw_bsp_lu1_read(),
+                levisw_bsp_lu2_read(),
+            };
+            const int64_t resync_us = esp_timer_get_time();
+            for (size_t i = 0; i < 2; i++) {
+                lines[i].candidate_level = current_levels[i];
+                lines[i].candidate_since_us = resync_us;
+                lines[i].pending = (current_levels[i] != lines[i].stable_level);
+            }
+        }
+    }
+}
+
+
+/* --------------------------------------------------------------------------
+ * Независимый декодер LU: принимает только копию raw-событий от dispatcher.
+ * Никаких GPIO/FreeRTOS зависимостей внутри lu_decoder.c нет.
+ * ------------------------------------------------------------------------ */
+static void app_lu_decoder_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    lu_event_dispatcher_stats_t stats;
+    uint32_t last_decoder_dropped = 0U;
+    uint32_t last_bsp_dropped = 0U;
+    uint32_t last_bsp_read_errors = 0U;
+
+    for (;;) {
+        levisw_bsp_lu_event_t event;
+        const esp_err_t err = lu_event_dispatcher_decoder_receive(
+            s_lu_dispatcher, &event, 20U);
+
+        if (err == ESP_OK) {
+            const lu_decoder_edge_t edge = {
+                .line = (event.line == LEVISW_LU_LINE_1)
+                      ? LU_DECODER_LINE_1 : LU_DECODER_LINE_2,
+                .level = event.level,
+                .timestamp_us = event.timestamp_us,
+            };
+            lu_decoder_feed(&s_lu_decoder, &edge);
+        } else if (err != ESP_ERR_TIMEOUT) {
+            ESP_LOGE(TAG, "LU decoder queue error: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
+        lu_event_dispatcher_get_stats(s_lu_dispatcher, &stats);
+        const uint32_t bsp_dropped = levisw_bsp_lu_event_dropped_count();
+        const bool event_stream_lost =
+            (stats.decoder_dropped != last_decoder_dropped) ||
+            (bsp_dropped != last_bsp_dropped) ||
+            (stats.bsp_read_errors != last_bsp_read_errors);
+
+        if (event_stream_lost) {
+            ESP_LOGE(TAG,
+                     "Потеря LU-потока: decoder_drop=%" PRIu32
+                     ", BSP_drop=%" PRIu32 ", read_errors=%" PRIu32
+                     "; текущий номерный кадр сбрасывается",
+                     stats.decoder_dropped - last_decoder_dropped,
+                     bsp_dropped - last_bsp_dropped,
+                     stats.bsp_read_errors - last_bsp_read_errors);
+            last_decoder_dropped = stats.decoder_dropped;
+            last_bsp_dropped = bsp_dropped;
+            last_bsp_read_errors = stats.bsp_read_errors;
+
+            /* После потери фронта нельзя доверять частичному номеру. */
+            const int64_t resync_us = esp_timer_get_time();
+            (void)lu_decoder_init(&s_lu_decoder, &s_lu_decoder_config);
+            (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_1,
+                                             levisw_bsp_lu1_read(), resync_us);
+            (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_2,
+                                             levisw_bsp_lu2_read(), resync_us);
+        }
+
+        lu_decoder_poll(&s_lu_decoder, esp_timer_get_time());
+
+        lu_decoder_result_t result;
+        while (lu_decoder_result_pop(&s_lu_decoder, &result)) {
+            if (result.valid) {
+                ESP_LOGI(TAG,
+                         "LU%u: кандидат номера квартиры %u "
+                         "(qualified edges=%u, burst complete)",
+                         (unsigned)(result.line + 1U),
+                         (unsigned)result.apartment,
+                         (unsigned)result.edge_count);
+            } else {
+                ESP_LOGW(TAG,
+                         "LU%u: отклонённый номерный пакет "
+                         "(qualified edges=%u)",
+                         (unsigned)(result.line + 1U),
+                         (unsigned)result.edge_count);
+            }
+        }
+    }
+}
+
 static esp_err_t app_check_power(void)
 {
     bool pg = false;
-    ESP_ERROR_CHECK(levisw_bsp_power_good(&pg));
+    esp_err_t err = levisw_bsp_power_good(&pg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать PGOOD: %s", esp_err_to_name(err));
+        return err;
+    }
 
     float v1_v = 0.0f, v1_ma = 0.0f;
     float v2_v = 0.0f, v2_ma = 0.0f;
     uint32_t vamp_mv = 0;
 
-    (void)levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
-    (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
-    (void)levisw_bsp_vamp_read_mv(&vamp_mv);
+    err = levisw_bsp_ina226_read(LEVISW_INA_V1, &v1_v, NULL, &v1_ma, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать INA226 (+V1): %s", esp_err_to_name(err));
+        return err;
+    }
+    err = levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать INA226 (+V2): %s", esp_err_to_name(err));
+        return err;
+    }
+    err = levisw_bsp_vamp_read_mv(&vamp_mv);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось прочитать +Vamp ADC: %s", esp_err_to_name(err));
+        return err;
+    }
 
-    ESP_LOGI(TAG, "Телеметрия питания: PG=%d | +POWERIN=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
+    ESP_LOGI(TAG, "Телеметрия питания: PG=%d | +Vamp=%.2f В | +V1=%.2f В | +V2(VPWR)=%.2f В (%.1f мА)",
              pg ? 1 : 0, (float)vamp_mv / 1000.0f, v1_v, v2_v, v2_ma);
 
     if (!pg) {
-        ESP_LOGW(TAG, "ВНИМАНИЕ: Power Good = 0! Проверьте входное питание клеммника POWERIN XP4.");
+        ESP_LOGE(TAG, "Power Good = 0: силовые драйверы не должны включаться.");
         app_led_set_rgb(60, 0, 0);
+        return ESP_ERR_INVALID_STATE;
     }
     return ESP_OK;
 }
@@ -132,13 +345,26 @@ static void tle94112_chaser_task(void *pvParameters)
     ESP_LOGI(TAG, "===============================================================");
 
     /* Гарантированное отключение всех полумостов перед стартом */
-    tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+    esp_err_t safe_err = tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+    if (safe_err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось перевести TLE94112 в FLOATING: %s", esp_err_to_name(safe_err));
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        vTaskDelete(NULL);
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(50));
 
     /* Включаем полумост PO3 (HB3, клемма XP3:7 / TP41) статически в Low-Side (GND) */
     esp_err_t err = tle94112_set_hb_state(s_tle_handle, TLE_HB3, TLE_HB_LS_ON);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Ошибка включения PO3 (HB3): %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Ошибка включения PO3 (HB3): %s. Отключаем систему.", esp_err_to_name(err));
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        vTaskDelete(NULL);
+        return;
     } else {
         ESP_LOGI(TAG, ">>> [СТАТИЧЕСКИ ВКЛЮЧЕН] Полумост PO3 (XP3:7 / TP41) = LS_ON (GND) <<<");
     }
@@ -147,7 +373,16 @@ static void tle94112_chaser_task(void *pvParameters)
         /* Дежурный цикл: просто удерживаем состояние и контролируем ток */
         vTaskDelay(pdMS_TO_TICKS(3000));
         float v2_v = 0.0f, v2_ma = 0.0f;
-        (void)levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+        esp_err_t monitor_err = levisw_bsp_ina226_read(LEVISW_INA_V2, &v2_v, NULL, &v2_ma, NULL);
+        if (monitor_err != ESP_OK) {
+            ESP_LOGE(TAG, "Потеря телеметрии +V2: %s. Аварийное отключение.", esp_err_to_name(monitor_err));
+            (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+            (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+            (void)levisw_bsp_drivers_enable(false);
+            (void)levisw_bsp_power_set(false, false, false, false);
+            vTaskDelete(NULL);
+            return;
+        }
         ESP_LOGI(TAG, "PO3 (XP3:7) [GND] + D0 (XP2:1) [+V2=%.2f В, I=%.1f мА] -> Светодиод ГОРИТ НЕПРЕРЫВНО", v2_v, v2_ma);
     }
 }
@@ -167,6 +402,57 @@ void app_main(void)
     ESP_LOGI(TAG, "Этап 1: Инициализация BSP платы...");
     ESP_ERROR_CHECK(levisw_bsp_init());
     ESP_LOGI(TAG, "Этап 1: BSP успешно инициализирован");
+
+    /*
+     * Инициализация чистого LU-декодера до запуска dispatcher: начальные уровни
+     * фиксируются как базовая точка, а накопленные ранее события считаются stale.
+     * Параметры по умолчанию (120 us / 80 ms / 2 перехода на номер) предварительные.
+     */
+    lu_decoder_default_config(&s_lu_decoder_config);
+    if (!lu_decoder_init(&s_lu_decoder, &s_lu_decoder_config)) {
+        ESP_LOGE(TAG, "Некорректная конфигурация LU decoder");
+        (void)levisw_bsp_deinit();
+        return;
+    }
+    const int64_t lu_baseline_us = esp_timer_get_time();
+    (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_1,
+                                    levisw_bsp_lu1_read(), lu_baseline_us);
+    (void)lu_decoder_set_line_level(&s_lu_decoder, LU_DECODER_LINE_2,
+                                    levisw_bsp_lu2_read(), lu_baseline_us);
+
+    /* Единственный читатель BSP-очереди; каждое событие копируется двум подписчикам. */
+    lu_event_dispatcher_config_t dispatcher_config;
+    lu_event_dispatcher_default_config(&dispatcher_config);
+    esp_err_t dispatcher_err = lu_event_dispatcher_start(&dispatcher_config,
+                                                          &s_lu_dispatcher);
+    if (dispatcher_err != ESP_OK) {
+        ESP_LOGE(TAG, "Не удалось запустить LU Event Dispatcher: %s",
+                 esp_err_to_name(dispatcher_err));
+        (void)levisw_bsp_deinit();
+        return;
+    }
+
+    TaskHandle_t lu_monitor_task_handle = NULL;
+    TaskHandle_t lu_decoder_task_handle = NULL;
+    BaseType_t monitor_created = xTaskCreate(app_lu_event_monitor_task,
+                                              "lu_monitor", 3072, NULL, 4,
+                                              &lu_monitor_task_handle);
+    BaseType_t decoder_created = xTaskCreate(app_lu_decoder_task,
+                                              "lu_decoder", 4096, NULL, 5,
+                                              &lu_decoder_task_handle);
+    if ((monitor_created != pdPASS) || (decoder_created != pdPASS)) {
+        ESP_LOGE(TAG, "Не удалось создать обе LU consumer-задачи");
+        if (lu_monitor_task_handle != NULL) {
+            vTaskDelete(lu_monitor_task_handle);
+        }
+        if (lu_decoder_task_handle != NULL) {
+            vTaskDelete(lu_decoder_task_handle);
+        }
+        (void)lu_event_dispatcher_stop(s_lu_dispatcher, 250U);
+        s_lu_dispatcher = NULL;
+        (void)levisw_bsp_deinit();
+        return;
+    }
 
     /* 2. Локальный индикатор LED1 (WS2812C, GPIO23, TP20) */
     ESP_LOGI(TAG, "Этап 2: Инициализация RGB LED WS2812C...");
@@ -198,16 +484,20 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(50)); /* Задержка стабилизации питания DC-DC */
     ESP_LOGI(TAG, "Этап 4: Питание +V1/+V2 включено");
 
-    /* 5. Активация общей линии разрешения драйверов EN-DE = 1 (GPIO20, TP115) */
-    ESP_LOGI(TAG, "Этап 5: Активация EN-DE (GPIO20)...");
+    /* 5. До активации EN-DE проверяем PGOOD: при аварии остаёмся в безопасном состоянии. */
+    ESP_LOGI(TAG, "Этап 5: Проверка телеметрии питания до включения драйверов...");
+    esp_err_t power_err = app_check_power();
+    if (power_err != ESP_OK) {
+        ESP_LOGE(TAG, "Проверка питания/телеметрии не пройдена. Отключаем +V1/+V2; EN-DE остаётся LOW.");
+        (void)levisw_bsp_power_set(false, false, false, false);
+        return;
+    }
+
+    /* 6. Активация общей линии разрешения драйверов EN-DE = 1 (GPIO20, TP115) */
+    ESP_LOGI(TAG, "Этап 6: Активация EN-DE (GPIO20)...");
     ESP_ERROR_CHECK(levisw_bsp_drivers_enable(true));
     vTaskDelay(pdMS_TO_TICKS(15)); /* Время пробуждения чипов из Sleep режима */
-    ESP_LOGI(TAG, "Этап 5: Драйверы выведены из Sleep");
-
-    /* 6. Проверка телеметрии питания */
-    ESP_LOGI(TAG, "Этап 6: Проверка телеметрии питания...");
-    app_check_power();
-    ESP_LOGI(TAG, "Этап 6: Телеметрия получена");
+    ESP_LOGI(TAG, "Этап 6: Драйверы выведены из Sleep");
 
     /* 7. Инициализация драйвера TLE94112EL через компонент tle94112.
      * Замечание: в BSP дескриптор SPI CS1=GPIO10 был добавлен при bsp_init.
@@ -232,6 +522,8 @@ void app_main(void)
     if (s_tle_handle == NULL) {
         ESP_LOGE(TAG, "КРИТИЧЕСКАЯ ОШИБКА: Не удалось инициализировать драйвер TLE94112EL!");
         app_led_set_rgb(60, 0, 0);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
         return;
     }
 
@@ -244,15 +536,9 @@ void app_main(void)
      * паразитные диоды выключенных полумостов надежно закрыты, и тусклое свечение полностью устранено! */
     ESP_LOGI(TAG, "Этап 8: Инициализация D1 MC33879A и включение выхода OUT1 (XP2:1, D0) -> +V2...");
     (void)levisw_bsp_rs485_set_active(false);
-    gpio_set_level(LEVISW_PIN_D8_A6_IN6, 0);
-    gpio_config_t in6_cfg = {
-        .pin_bit_mask = (1ULL << LEVISW_PIN_D8_A6_IN6),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    (void)gpio_config(&in6_cfg);
+    /* По подтверждению пользователя IN5/IN6 на самой MC33879 уже LOW.
+     * CORN13/RN13 не установлена; GPIO21 не соединён с IN6 и не управляет им.
+     */
 
     mc33879a_config_t mc_cfg = {
         .spi_host = SPI2_HOST,
@@ -270,15 +556,41 @@ void app_main(void)
     if (mc_err == ESP_OK) {
         uint8_t faults = 0;
         /* Включаем OUT1 (бит 0 = 0x01) -> клемма XP2:1 (D0). Выходы OUT2..OUT8 отключены (0) */
-        ESP_ERROR_CHECK(mc33879a_set_outputs(&s_mc33879, 0x01, &faults));
+        /* RX MC33879A возвращает диагностику предыдущего 16-битного кадра.
+         * Поэтому после установки OUT1 выполняем отдельный readback-кадр. */
+        esp_err_t out_err = mc33879a_set_outputs(&s_mc33879, 0x01, NULL);
+        if (out_err == ESP_OK) {
+            out_err = mc33879a_read_faults(&s_mc33879, &faults);
+        }
+        if (out_err != ESP_OK || faults != 0U) {
+            ESP_LOGE(TAG, "MC33879A OUT1 не включён: SPI=%s, FAULT=0x%02X",
+                     esp_err_to_name(out_err), faults);
+            (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+            (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+            (void)levisw_bsp_drivers_enable(false);
+            (void)levisw_bsp_power_set(false, false, false, false);
+            return;
+        }
         ESP_LOGI(TAG, "D1 MC33879A OUT1 (XP2:1, D0) ВКЛЮЧЕН в +V2! Общий анод запитан.");
     } else {
         ESP_LOGE(TAG, "Ошибка инициализации D1 MC33879A: %s", esp_err_to_name(mc_err));
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        return;
     }
 
     /* 9. Создание задачи циклического бегущего огня */
     ESP_LOGI(TAG, "Этап 9: Запуск задачи tle94112_chaser_task (бегущий огонь E0..E9)...");
-    xTaskCreate(tle94112_chaser_task, "tle_chaser", 4096, NULL, 5, NULL);
+    BaseType_t task_created = xTaskCreate(tle94112_chaser_task, "tle_chaser", 4096, NULL, 5, NULL);
+    if (task_created != pdPASS) {
+        ESP_LOGE(TAG, "Не удалось создать задачу коммутации; отключаем силовые выходы.");
+        (void)mc33879a_set_outputs(&s_mc33879, 0x00, NULL);
+        (void)tle94112_set_all_hb_state(s_tle_handle, TLE_HB_FLOATING);
+        (void)levisw_bsp_drivers_enable(false);
+        (void)levisw_bsp_power_set(false, false, false, false);
+        return;
+    }
 
     ESP_LOGI(TAG, "Приложение готово к работе. Запущен бегущий огонь (E0..E9) с питанием от XP2:1.");
 }
