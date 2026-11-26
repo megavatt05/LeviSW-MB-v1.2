@@ -274,7 +274,7 @@ static esp_err_t init_gpio(void)
 {
     /* Сначала конфигурируем GPIO как выходы, затем задаём безопасные уровни.
      * EN-DE=0 отключает силовые драйверы; RS-ON=0 удерживает MAX13487 в shutdown.
-     * GPIO27 имеет общие цепи BUTTON/D8-A5 — активировать RS-485 следует явно из приложения. */
+     * GPIO27 имеет общие цепи BUTTON/RS-ON; CORN13/RN13 не установлена, IN5 MC33879 к GPIO27 не подключён. */
     gpio_config_t out_cfg = {
         .pin_bit_mask = (1ULL << LEVISW_PIN_SPI_EN2_DRIVERS) |
                         (1ULL << LEVISW_PIN_RS_ON),
@@ -750,24 +750,24 @@ esp_err_t levisw_bsp_ina226_read(levisw_ina_channel_t ch,
  * Матрица 8x10, SPI-драйверы D1/D2 и аудиоусилитель XS2
  * ------------------------------------------------------------------------ */
 
-esp_err_t levisw_bsp_adg1608_select(uint8_t dozen, bool enable)
+esp_err_t levisw_bsp_adg1608_select(uint8_t channel, bool enable)
 {
-    ESP_RETURN_ON_FALSE(dozen < LEVISW_MATRIX_DOZENS_COUNT, ESP_ERR_INVALID_ARG,
-                        TAG, "Индекс десятка должен быть 0..7");
+    ESP_RETURN_ON_FALSE(channel < LEVISW_MATRIX_DOZENS_COUNT, ESP_ERR_INVALID_ARG,
+                        TAG, "Индекс AMP-канала ADG1608 должен быть 0..7");
 
     uint8_t p0_mask = LEVISW_EXP_P0_SW_A0 | LEVISW_EXP_P0_SW_A1;
     uint8_t p1_mask = LEVISW_EXP_P1_SW_A2 | LEVISW_EXP_P1_SW_EN;
 
     uint8_t p0_val = 0;
-    if ((dozen & 0x01U) != 0U) {
+    if ((channel & 0x01U) != 0U) {
         p0_val |= LEVISW_EXP_P0_SW_A0;
     }
-    if ((dozen & 0x02U) != 0U) {
+    if ((channel & 0x02U) != 0U) {
         p0_val |= LEVISW_EXP_P0_SW_A1;
     }
 
     uint8_t p1_val = 0;
-    if ((dozen & 0x04U) != 0U) {
+    if ((channel & 0x04U) != 0U) {
         p1_val |= LEVISW_EXP_P1_SW_A2;
     }
     if (enable) {
