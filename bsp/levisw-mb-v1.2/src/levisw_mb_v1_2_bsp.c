@@ -636,24 +636,24 @@ esp_err_t levisw_bsp_ina226_read(levisw_ina_channel_t ch,
  * Матрица 8x10, SPI-драйверы D1/D2 и аудиоусилитель XS2
  * ------------------------------------------------------------------------ */
 
-esp_err_t levisw_bsp_adg1608_select(uint8_t dozen, bool enable)
+esp_err_t levisw_bsp_adg1608_select(uint8_t channel, bool enable)
 {
-    ESP_RETURN_ON_FALSE(dozen < LEVISW_MATRIX_DOZENS_COUNT, ESP_ERR_INVALID_ARG,
-                        TAG, "Индекс десятка должен быть 0..7");
+    ESP_RETURN_ON_FALSE(channel < LEVISW_ADG1608_CHANNELS_COUNT, ESP_ERR_INVALID_ARG,
+                        TAG, "Индекс канала ADG1608 должен быть 0..7");
 
     uint8_t p0_mask = LEVISW_EXP_P0_SW_A0 | LEVISW_EXP_P0_SW_A1;
     uint8_t p1_mask = LEVISW_EXP_P1_SW_A2 | LEVISW_EXP_P1_SW_EN;
 
     uint8_t p0_val = 0;
-    if ((dozen & 0x01U) != 0U) {
+    if ((channel & 0x01U) != 0U) {
         p0_val |= LEVISW_EXP_P0_SW_A0;
     }
-    if ((dozen & 0x02U) != 0U) {
+    if ((channel & 0x02U) != 0U) {
         p0_val |= LEVISW_EXP_P0_SW_A1;
     }
 
     uint8_t p1_val = 0;
-    if ((dozen & 0x04U) != 0U) {
+    if ((channel & 0x04U) != 0U) {
         p1_val |= LEVISW_EXP_P1_SW_A2;
     }
     if (enable) {
