@@ -5,7 +5,7 @@
  * Демонстрирует работу аппаратного Узла 07 (Лист 4 MCU-ESP.SchDoc):
  *  1. Расширитель GPIO DD3: TCA9535PWR (адрес I2C 0x20):
  *     - Управление силовыми ключами (+V1, +V2, +Vamp, eLOAD);
- *     - Управление мультиплексором десятков матрицы DA1 ADG1608 (SW-A0..SW-A2, SW-EN);
+ *     - Управление аналоговым селектором DA1 ADG1608: +LINE -> AMP1..AMP8 / XS3 (SW-A0..SW-A2, SW-EN);
  *     - Управление аудиоусилителем и реле (ENA1..ENA5, LEDAMP);
  *     - Чтение статусов PG (Power Good) и ALARMIN, мониторинг прерывания INT0 (GPIO35);
  *  2. Матрица перемычек и резисторных сборок (RN7, RN8, RN12):
@@ -90,15 +90,15 @@ static void expander_test_task(void *pvParameters)
             ESP_LOGW(TAG, "Ошибка чтения регистров TCA9535: %s", esp_err_to_name(err));
         }
 
-        /* Циклическая проверка каналов матрицы ADG1608 и реле через расширитель */
-        uint8_t dozen = (step % 8);
+        /* Циклическая проверка аналоговых AMP-маршрутов ADG1608 и реле */
+        uint8_t channel = (uint8_t)(step % LEVISW_MATRIX_DOZENS_COUNT);
         bool rel_state = ((step / 8) % 2) == 0;
 
-        ESP_LOGI(TAG, "[EXPANDER TEST] Шаг %lu: Выбор десятка ADG1608 = D%u, Реле = %s",
-                 (unsigned long)step, dozen, rel_state ? "ВКЛ" : "ВЫКЛ");
+        ESP_LOGI(TAG, "[EXPANDER TEST] Шаг %lu: ADG1608 S%u -> AMP%u, Реле = %s",
+                 (unsigned long)step, channel + 1U, channel + 1U, rel_state ? "ВКЛ" : "ВЫКЛ");
 
-        /* Управляем мультиплексором десятков и реле через BSP */
-        (void)levisw_bsp_adg1608_select(dozen, true);
+        /* Выбираем AMP-маршрут; координата D0..D7 через MC33879 этим вызовом не переключается. */
+        (void)levisw_bsp_adg1608_select(channel, true);
         (void)levisw_bsp_amp_set(true, true, false, rel_state, !rel_state, true);
 
         if ((step % 2) == 0) {
