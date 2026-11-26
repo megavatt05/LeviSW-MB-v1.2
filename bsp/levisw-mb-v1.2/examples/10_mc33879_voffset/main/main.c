@@ -8,9 +8,8 @@
  *     - MOSI (GPIO7), MISO (GPIO9), SCLK (GPIO5);
  *     - Chip Select CS2 (GPIO8, CS-D, подтяжка RN19 10к);
  *     - Разрешение работы EN-DE (GPIO20, pull-down RN19 10к);
- *  3. Прямые аппаратные входы управления:
- *     - IN5 -> GPIO27 (совместно с RS-ON и кнопкой SW1);
- *     - IN6 -> GPIO21 (через резисторную сборку RN13, pull-down RN21 1к).
+ *  3. На осмотренном экземпляре CORN13/RN13 не установлена:
+ *     IN5 и IN6 MC33879 не подключены к GPIO27/GPIO21.
  */
 
 #include <stdio.h>
@@ -71,17 +70,11 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
 
 static void mc33879_test_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Запуск инициализации и тестирования драйвера D1 MC33879APEKR2 (VOffset / Защита)");
+    ESP_LOGW(TAG, "Тест MC33879: 0xAA55 включает OUT1/3/5/7; запускать только без абонентской линии!");
 
-    /* Настраиваем прямой вход IN6 (GPIO21) */
-    gpio_config_t in6_cfg = {
-        .pin_bit_mask = (1ULL << LEVISW_PIN_D8_A6_IN6),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&in6_cfg);
+    /* IN5/IN6 не подключены к GPIO на осмотренной плате (CORN13/RN13 DNP).
+     * Проверять логические уровни непосредственно на выводах D1.
+     */
 
     uint32_t cycle = 0;
 
@@ -94,10 +87,10 @@ static void mc33879_test_task(void *pvParameters)
 
         /* 2. Отправляем 16-битный SPI-кадр настройки/активации каналов MC33879 */
         uint16_t rx_frame = 0;
-        uint16_t tx_frame = 0xAA55; /* Тестовый кадр конфигурации каналов */
+        uint16_t tx_frame = 0xAA55; /* OUT1/3/5/7 ON; open-load detect OUT8/6/4/2. Только стенд! */
         esp_err_t err = levisw_bsp_spi_mc33879_xfer(tx_frame, &rx_frame);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "[SPI MC33879] TX: 0x%04X, RX: 0x%04X (Защита VOffset активна)", tx_frame, rx_frame);
+            ESP_LOGW(TAG, "[SPI MC33879] TX: 0x%04X, RX: 0x%04X (OUT1/3/5/7 включены; VOffset не подтверждён)", tx_frame, rx_frame);
             app_led_set_rgb(20, 50, 20); /* Зеленоватый */
         } else {
             ESP_LOGW(TAG, "Ошибка SPI обмена с MC33879: %s", esp_err_to_name(err));
