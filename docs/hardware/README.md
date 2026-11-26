@@ -1,6 +1,7 @@
 # Аппаратная документация LeviSW-MB v1.2
 
 - [Анализ принципиальной схемы](SCHEMATIC_ANALYSIS.md)
+- [Трассировка +LINE до матричных разъёмов и проверка защит](SIGNAL_PATH_PLUS_LINE_TO_SUBSCRIBER.md)
 - [Даташиты компонентов и официальные ссылки](DATASHEETS.md)
 
 Исходная КД: `LeviSW-MB_v1.2E2[A] КД.PDF`, 25 страниц, SHA-256:
