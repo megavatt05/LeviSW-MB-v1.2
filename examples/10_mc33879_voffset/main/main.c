@@ -71,7 +71,7 @@ static void app_led_set_rgb(uint32_t r, uint32_t g, uint32_t b)
 
 static void mc33879_test_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Запуск инициализации и тестирования драйвера D1 MC33879APEKR2 (VOffset / Защита)");
+    ESP_LOGW(TAG, "Тест MC33879: кадр 0xAA55 включает OUT1/OUT3/OUT5/OUT7; запускать только без абонентской линии!");
 
     /* Настраиваем прямой вход IN6 (GPIO21) */
     gpio_config_t in6_cfg = {
@@ -94,10 +94,10 @@ static void mc33879_test_task(void *pvParameters)
 
         /* 2. Отправляем 16-битный SPI-кадр настройки/активации каналов MC33879 */
         uint16_t rx_frame = 0;
-        uint16_t tx_frame = 0xAA55; /* Тестовый кадр конфигурации каналов */
+        uint16_t tx_frame = 0xAA55; /* OUT1/3/5/7 ON; open-load detect OUT8/6/4/2. Только стенд! */
         esp_err_t err = levisw_bsp_spi_mc33879_xfer(tx_frame, &rx_frame);
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "[SPI MC33879] TX: 0x%04X, RX: 0x%04X (Защита VOffset активна)", tx_frame, rx_frame);
+            ESP_LOGW(TAG, "[SPI MC33879] TX: 0x%04X, RX: 0x%04X (включены OUT1/3/5/7; VOffset этим тестом не подтверждён)", tx_frame, rx_frame);
             app_led_set_rgb(20, 50, 20); /* Зеленоватый */
         } else {
             ESP_LOGW(TAG, "Ошибка SPI обмена с MC33879: %s", esp_err_to_name(err));
