@@ -15,6 +15,9 @@
 #if !CONFIG_SWITCHBOARD_HARDWARE_PROFILE_APPROVED
 #error "Физический режим запрещён: подтвердите профиль платы в menuconfig."
 #endif
+#if !CONFIG_SWITCHBOARD_ADG_IS_D_PATH_CONFIRMED
+#error "Физический режим запрещён: подтвердите прозвонкой, что ADG1608 действительно формирует D0..D7 на квартирном жгуте. См. README / HW-021."
+#endif
 #if !CONFIG_SWITCHBOARD_POWER_ON_AT_BOOT
 #error "Физический режим требует явного разрешения включения +V1/+V2."
 #endif
