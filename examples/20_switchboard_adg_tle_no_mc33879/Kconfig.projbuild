@@ -14,6 +14,14 @@ config SWITCHBOARD_HARDWARE_PROFILE_APPROVED
     bool "Физический профиль платы проверен"
     default n
 
+config SWITCHBOARD_ADG_IS_D_PATH_CONFIRMED
+    bool "Подтверждено: выход ADG1608 является D-координатой до квартирного жгута"
+    default n
+    help
+        ВАЖНО: действующий аппаратный аудит схемы указывает ADG1608 S1..S8 -> AMP1..AMP8/XS3,
+        а MC33879 S1..S8 -> D0..D7/XP2. Это противоречит экспериментальной модели Example 20.
+        Отмечайте только после прозвонки конкретной платы/жгута и подтверждения полного пути D.
+
 config SWITCHBOARD_POWER_ON_AT_BOOT
     bool "Разрешить включение шин +V1/+V2 при старте"
     default n
