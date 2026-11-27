@@ -1,0 +1,101 @@
+menu "LeviSW-MB v1.2 — ADG1608 + TLE94112 apartment matrix"
+
+config SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
+    bool "Разрешить физическую матрицу ADG1608 + TLE94112"
+    default n
+    help
+        По умолчанию используется программная симуляция.
+        Физический режим разрешать только после проверки координат D/E,
+        полярности E, питания, входов LU и адресной карты квартир.
+
+if SWITCHBOARD_ENABLE_PHYSICAL_MATRIX
+
+config SWITCHBOARD_HARDWARE_PROFILE_APPROVED
+    bool "Физический профиль платы проверен"
+    default n
+
+config SWITCHBOARD_POWER_ON_AT_BOOT
+    bool "Разрешить включение шин +V1/+V2 при старте"
+    default n
+    help
+        Задаёт DA2/DA3, включает +V1/+V2 и проверяет PGOOD/INA226.
+        Абонентский жгут должен быть отключён во время первичной проверки.
+
+config SWITCHBOARD_ACTIVE_UNIT_DRIVE
+    int "Полярность активного E-выхода (0=не задана, 1=LOW_SIDE, 2=HIGH_SIDE)"
+    range 0 2
+    default 0
+    help
+        Нельзя включать физическую матрицу, пока режим не подтверждён схемой
+        и измерениями безопасной нагрузкой.
+
+config SWITCHBOARD_V1_WIPER
+    int "Уставка DA2 (+V1), wiper 0..128"
+    range 0 128
+    default 2
+
+config SWITCHBOARD_V2_WIPER
+    int "Уставка DA3 (+V2), wiper 0..128"
+    range 0 128
+    default 10
+
+config SWITCHBOARD_RAIL_MIN_MV
+    int "Минимальное напряжение +V1/+V2, мВ"
+    range 1000 15000
+    default 5500
+
+config SWITCHBOARD_RAIL_MAX_MV
+    int "Максимальное напряжение +V1/+V2, мВ"
+    range 1000 20000
+    default 10000
+
+endif
+
+config SWITCHBOARD_ENABLE_DAC_RING
+    bool "Генерировать низкоуровневый тон вызова на SOUND1/SOUND2"
+    default n
+    help
+        Это аудиотон на DAC GPIO25/GPIO26 через XS2:4/6.
+        Это НЕ генератор высоковольтного переменного напряжения звонка
+        для аналоговой трубки. До включения проверьте вход внешнего LeviAMP.
+
+config SWITCHBOARD_RING_TONE_HZ
+    int "Частота тестового тона, Гц"
+    range 130 3000
+    default 425
+
+config SWITCHBOARD_RING_AMP_MASK
+    int "Разрешить каналы внешнего усилителя (бит0=AMP1, бит1=AMP2, бит2=AMP3)"
+    range 0 7
+    default 0
+    help
+        0 — не включать ENAMP1..3. Выберите канал только после проверки схемы LeviAMP.
+
+config SWITCHBOARD_RING_ON_MS
+    int "Длительность сигнала вызова, мс"
+    range 100 10000
+    default 1000
+
+config SWITCHBOARD_RING_OFF_MS
+    int "Пауза между сигналами вызова, мс"
+    range 100 30000
+    default 4000
+
+config SWITCHBOARD_ALARM_MONITOR_ENABLE
+    bool "Опрос входа ALARM-IN внешнего усилителя"
+    default y
+
+config SWITCHBOARD_ALARM_FAULT_ENABLE
+    bool "Переводить контроллер в FAULT при активном ALARM-IN"
+    depends on SWITCHBOARD_ALARM_MONITOR_ENABLE
+    default n
+    help
+        Полярность входа внешнего модуля должна быть измерена.
+        Пока не подтверждена, оставьте аварийную интерпретацию выключенной.
+
+config SWITCHBOARD_ALARM_ACTIVE_HIGH
+    bool "ALARM-IN активен уровнем HIGH"
+    depends on SWITCHBOARD_ALARM_FAULT_ENABLE
+    default y
+
+endmenu
