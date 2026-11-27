@@ -22,10 +22,14 @@ static matrix_manager_status_t adapter_set_mux(void *context,
 static matrix_manager_status_t adapter_set_d_mask(void *context, uint8_t mask)
 {
     matrix_manager_espidf_t *adapter = (matrix_manager_espidf_t *)context;
-    if ((adapter == NULL) || (adapter->mc == NULL)) {
+    if (adapter == NULL) {
         return MATRIX_MANAGER_ERR_INVALID_STATE;
     }
-
+    if (adapter->mc == NULL) {
+        /* Режим без MC33879A: десятки коммутируются только через ADG1608BR. */
+        (void)mask;
+        return MATRIX_MANAGER_OK;
+    }
     uint8_t faults = 0U;
     /*
      * Слово RX этой транзакции SPI описывает предыдущий кадр.
@@ -113,8 +117,8 @@ esp_err_t matrix_manager_espidf_make_ops(matrix_manager_espidf_t *adapter,
                                          mc33879a_handle_t *mc,
                                          matrix_manager_hw_ops_t *out_ops)
 {
-    if ((adapter == NULL) || (tle == NULL) || (mc == NULL) ||
-        (mc->spi_dev == NULL) || (out_ops == NULL)) {
+    if ((adapter == NULL) || (tle == NULL) ||
+        ((mc != NULL) && (mc->spi_dev == NULL)) || (out_ops == NULL)) {
         return ESP_ERR_INVALID_ARG;
     }
 
