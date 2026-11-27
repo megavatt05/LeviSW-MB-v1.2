@@ -334,9 +334,9 @@ static esp_err_t initialize_physical_matrix(void)
     }
 
     /*
-     * BSP регистрирует TLE94112 без флага LSB-first. Удаляем этот дескриптор
-     * и создаём новый через специализированный драйвер TLE94112, который
-     * устанавливает SPI_DEVICE_BIT_LSBFIRST. Шина SPI2 остаётся инициализированной BSP.
+     * BSP уже задаёт SPI_DEVICE_BIT_LSBFIRST для TLE94112, однако мы удаляем
+     * дескриптор BSP, чтобы драйвер tle94112_init зарегистрировал собственный
+     * дескриптор на LEVISW_PIN_SPI_CS1_TLE. Шина SPI2 остаётся инициализированной BSP.
      */
     err = spi_bus_remove_device(handles->spi_tle94112);
     if (err != ESP_OK) {
@@ -356,27 +356,10 @@ static esp_err_t initialize_physical_matrix(void)
         goto fail;
     }
 
-    const mc33879a_config_t mc_config = {
-        .spi_host = SPI2_HOST,
-        .mosi_io_num = LEVISW_PIN_SPI_MOSI,
-        .miso_io_num = LEVISW_PIN_SPI_MISO,
-        .sclk_io_num = LEVISW_PIN_SPI_CLK,
-        .cs_io_num = LEVISW_PIN_SPI_CS2_MC33,
-        .en_io_num = -1, /* Не переключать общий EN-DE из драйвера MC33879A. */
-        .clock_speed_hz = CONFIG_LEVISW_SPI_MC33879_FREQ_HZ,
-        .init_spi_bus = false,
-        .existing_spi_dev = handles->spi_mc33879,
-    };
-    err = mc33879a_init(&mc_config, &s_app.mc);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Не удалось инициализировать MC33879A: %s", esp_err_to_name(err));
-        goto fail;
-    }
-
     matrix_manager_hw_ops_t ops;
     err = matrix_manager_espidf_make_ops(&s_app.physical_adapter,
                                          s_app.tle,
-                                         &s_app.mc,
+                                         NULL,
                                          &ops);
     if (err != ESP_OK) {
         goto fail;
