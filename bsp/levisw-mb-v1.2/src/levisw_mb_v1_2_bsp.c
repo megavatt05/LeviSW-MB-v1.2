@@ -23,6 +23,10 @@ static const char *TAG = "levisw_bsp";
 #define LEVISW_I2C_TIMEOUT_MS       50
 #define LEVISW_LU_EVENT_QUEUE_LEN    32U
 
+#ifndef CONFIG_LEVISW_ENABLE_MC33879
+#define CONFIG_LEVISW_ENABLE_MC33879 0
+#endif
+
 /* Регистры расширителя портов TI TCA9535PWR (I2C 0x20) */
 #define TCA9535_REG_INPUT_P0        0x00
 #define TCA9535_REG_INPUT_P1        0x01
@@ -384,7 +388,8 @@ static esp_err_t init_spi(void)
     ESP_RETURN_ON_ERROR(spi_bus_add_device(SPI2_HOST, &tle_cfg, &s_bsp.handles.spi_tle94112),
                         TAG, "Ошибка добавления SPI-устройства TLE94112EL");
 
-    /* D1 MC33879APEKR2: SPI Mode 1 (CPOL=0, CPHA=1), CS2 = IO8 */
+#if CONFIG_LEVISW_ENABLE_MC33879
+    /* D1 MC33879APEKR2 регистрируется только по явному разрешению Kconfig. */
     spi_device_interface_config_t mc33_cfg = {
         .mode             = 1,
         .clock_speed_hz   = CONFIG_LEVISW_SPI_MC33879_FREQ_HZ,
@@ -395,6 +400,9 @@ static esp_err_t init_spi(void)
     };
     ESP_RETURN_ON_ERROR(spi_bus_add_device(SPI2_HOST, &mc33_cfg, &s_bsp.handles.spi_mc33879),
                         TAG, "Ошибка добавления SPI-устройства MC33879");
+#else
+    s_bsp.handles.spi_mc33879 = NULL;
+#endif
 
     return ESP_OK;
 }
@@ -818,6 +826,20 @@ static esp_err_t spi_xfer16(spi_device_handle_t dev, uint16_t tx_frame, uint16_t
 esp_err_t levisw_bsp_spi_tle94112_xfer(uint16_t tx_frame, uint16_t *rx_frame)
 {
     return spi_xfer16(s_bsp.handles.spi_tle94112, tx_frame, rx_frame);
+}
+
+esp_err_t levisw_bsp_tle_release_spi_device(void)
+{
+    ESP_RETURN_ON_FALSE(s_bsp.initialized, ESP_ERR_INVALID_STATE, TAG, "BSP не инициализирован");
+    if (s_bsp.handles.spi_tle94112 == NULL) {
+        return ESP_OK;
+    }
+
+    const esp_err_t err = spi_bus_remove_device(s_bsp.handles.spi_tle94112);
+    if (err == ESP_OK) {
+        s_bsp.handles.spi_tle94112 = NULL;
+    }
+    return err;
 }
 
 esp_err_t levisw_bsp_spi_mc33879_xfer(uint16_t tx_frame, uint16_t *rx_frame)
