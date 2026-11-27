@@ -1,0 +1,22 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "switchboard_app.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        levisw-mb-v1.2
+        matrix_manager
+        call_controller
+        call_runtime
+        handset_detector
+        lu_decoder
+        lu_event_dispatcher
+        matrix_manager_adg_tle
+        tle94112
+        esp_driver_dac
+        freertos
+        esp_timer
+        driver
+        log
+)
