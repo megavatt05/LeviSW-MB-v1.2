@@ -1,0 +1,65 @@
+name: Example 20 — ESP-IDF 6.0 / ADG1608 + TLE94112, no MC33879
+
+on:
+  push:
+    branches:
+      - feature/switchboard-no-mc33879
+    paths:
+      - "examples/20_switchboard_adg_tle_no_mc33879/**"
+      - "bsp/levisw-mb-v1.2/**"
+      - "components/matrix_manager/**"
+      - "components/call_controller/**"
+      - "components/call_runtime/**"
+      - "components/handset_detector/**"
+      - "components/lu_decoder/**"
+      - "components/lu_event_dispatcher/**"
+      - "tools/matrix_address_map/**"
+      - ".github/workflows/example20-adg-tle-no-mc33879.yml"
+  pull_request:
+    paths:
+      - "examples/20_switchboard_adg_tle_no_mc33879/**"
+      - "bsp/levisw-mb-v1.2/**"
+      - "components/matrix_manager/**"
+      - "components/call_controller/**"
+      - "components/call_runtime/**"
+      - "components/handset_detector/**"
+      - "components/lu_decoder/**"
+      - "components/lu_event_dispatcher/**"
+      - "tools/matrix_address_map/**"
+  workflow_dispatch:
+
+jobs:
+  firmware-build:
+    name: Build Example 20 on ESP-IDF 6.0 / ESP32
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build safe configuration
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: release-v6.0
+          target: esp32
+          path: examples/20_switchboard_adg_tle_no_mc33879
+
+  native-tests:
+    name: Matrix and FSM native tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Run native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/native
+          for component in matrix_manager call_controller call_runtime handset_detector lu_decoder; do
+            cmake -S "components/$component/tests" -B "build/native/$component"
+            cmake --build "build/native/$component" --parallel
+            ctest --test-dir "build/native/$component" --output-on-failure
+          done
+          python3 -m unittest discover -s tools/matrix_address_map/tests -v
