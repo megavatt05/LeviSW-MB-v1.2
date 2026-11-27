@@ -4,6 +4,7 @@
 - [Трассировка +LINE до матричных разъёмов и проверка защит](SIGNAL_PATH_PLUS_LINE_TO_SUBSCRIBER.md)
 - [Даташиты компонентов и официальные ссылки](DATASHEETS.md)
 - [Аудит VOffset и диодов VD15–VD23](VOFFSET_DIODE_LADDER_AUDIT.md)
+- [Канал питания +V1: DA2 и DD5](POWER_CHANNEL_MV1_DA2_DD5.md)
 
 Исходная КД: `LeviSW-MB_v1.2E2[A] КД.PDF`, 25 страниц, SHA-256:
 `efc1b6d2a2dc5498d8209a46f1726fe75ee1c75ccb04cf508ceeb2a0ec37e2f0`.
