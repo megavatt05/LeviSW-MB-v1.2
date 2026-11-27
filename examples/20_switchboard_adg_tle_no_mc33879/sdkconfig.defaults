@@ -1,0 +1,14 @@
+CONFIG_IDF_TARGET="esp32"
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_FREERTOS_HZ=1000
+
+# Do not register or send SPI traffic to MC33879APEKR2 in this project.
+CONFIG_LEVISW_ENABLE_MC33879=n
+
+# Software matrix simulation is the default.
+CONFIG_SWITCHBOARD_ENABLE_PHYSICAL_MATRIX=n
+
+# Ring tone generator on SOUND1/SOUND2 is opt-in until the external LeviAMP
+# input level and selected amplifier-enable channel are verified.
+CONFIG_SWITCHBOARD_ENABLE_DAC_RING=n
+CONFIG_SWITCHBOARD_RING_AMP_MASK=0
