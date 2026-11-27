@@ -14,6 +14,13 @@ menu "LeviSW-MB v1.2 BSP Configuration"
         help
             Тактовая частота SPI для драйвера единиц TLE94112EL (до 5 МГц по даташиту).
 
+    config LEVISW_ENABLE_MC33879
+        bool "Register MC33879APEKR2 on SPI2"
+        default n
+        help
+            По умолчанию выключено для конфигурации матрицы ADG1608 (десятки) + TLE94112 (единицы).
+            Включайте только при отдельной проверке/использовании MC33879APEKR2 как узла VOffset.
+
     config LEVISW_SPI_MC33879_FREQ_HZ
         int "MC33879APEKR2 (D1) SPI frequency (Hz)"
         default 2000000
