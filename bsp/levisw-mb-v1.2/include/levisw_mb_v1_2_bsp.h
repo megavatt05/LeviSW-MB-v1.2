@@ -168,6 +168,8 @@ esp_err_t levisw_bsp_drivers_enable(bool enable);
 
 /** Выполнить полнодуплексный 16-битный SPI-обмен с драйвером единиц D2 TLE94112EL. */
 esp_err_t levisw_bsp_spi_tle94112_xfer(uint16_t tx_frame, uint16_t *rx_frame);
+/** Освободить BSP-дескриптор TLE94112 перед регистрацией специализированного LSB-first драйвера. */
+esp_err_t levisw_bsp_tle_release_spi_device(void);
 
 /** Выполнить полнодуплексный 16-битный SPI-обмен с драйвером VOffset D1 MC33879APEKR2. */
 esp_err_t levisw_bsp_spi_mc33879_xfer(uint16_t tx_frame, uint16_t *rx_frame);
