@@ -379,7 +379,8 @@ static esp_err_t init_spi(void)
         .mode           = 1,
         .clock_speed_hz = CONFIG_LEVISW_SPI_TLE94112_FREQ_HZ,
         .spics_io_num   = LEVISW_PIN_SPI_CS1_TLE,
-        .queue_size     = 2,
+        .queue_size     = 2, 
+    .flags          = SPI_DEVICE_BIT_LSBFIRST,
     };
     ESP_RETURN_ON_ERROR(spi_bus_add_device(SPI2_HOST, &tle_cfg, &s_bsp.handles.spi_tle94112),
                         TAG, "Ошибка добавления SPI-устройства TLE94112EL");
